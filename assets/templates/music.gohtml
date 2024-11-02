@@ -1,0 +1,446 @@
+<!doctype html>
+<html>
+	<head>
+		{{render "_head" $}}
+		<title>{{tr "titleprefix"}}{{tr "music_title"}}</title>
+		<style>
+			{{$opt := opts}}
+			table {
+				{{if $opt.Stretch}}
+					width: 100%;
+				{{else}}
+					width: 110ch;
+				{{end}}
+				margin: auto;
+				/*width: 100%;*/
+				/*max-width: 100%;*/
+				/*border: 1px solid black;*/
+				margin-top: 1em;
+				margin-bottom: 1em;
+				table-layout: fixed;
+				padding-left: 1vw;
+				padding-right: 1vw;
+			}
+			@media screen and (max-width: 120ch) {
+				table {
+					width: 100%;
+				}
+			}
+			main {
+				min-height: 100vh;
+				counter-reset: selectedtracks;
+			}
+			#loading-progress {
+				font-size: smaller;
+				display: none;
+			}
+			#loading-progress[data-ct] {
+				display: unset;
+			}
+			/*table {
+				-webkit-transform: translate3d(0, 0, 0);
+				         transform: translate3d(0, 0, 0);
+			}*/
+			table th {
+				text-align: left;
+			}
+			.sort-row a, .sort-row a:visited {
+				color: var(--links);
+				text-decoration: none;
+			}
+			.sort-row a:hover {
+				/*text-decoration: underline;*/
+			}
+			.sort-row a.active[data-reverse='true']::after {
+				content: " ▼";
+			}
+			.sort-row a.active[data-reverse='false']::after {
+				content: " ▲";
+			}
+			.sort-row a:not(.active):hover::after {
+				content: " ▲";
+			}
+/*			.sort-row a:not(.active)[data-reverse='false']::after {
+				content: " ▲";
+			}*/
+			.track[data-state='playing'] {
+				background: var(--hi-bg);
+				color: var(--hi-fg);
+			}
+			.track[data-selected="true"] {
+				background-image: repeating-linear-gradient(-45deg, transparent, transparent 10px, var(--hi-bg) 10px, var(--hi-bg) 20px);
+				/*color: var(--hi-fg);*/
+				counter-increment: selectedtracks;
+			}
+			@media (hover: hover) {
+				.track:hover {
+					cursor: pointer;
+				}
+				.track td a:hover, a.album-artist:hover {
+					cursor: pointer;
+					text-decoration: underline;
+				}
+				table tr[data-state='stopped'] .status-stopped {
+					visibility: hidden;
+				}
+				.track[data-state='stopped']:hover {
+					background: var(--hi-bg);
+					color: var(--hi-fg);
+				}
+				table tr[data-state='stopped']:hover .status-stopped {
+					visibility: visible;
+				}
+				#player figcaption:hover {
+					cursor: pointer;
+				}
+			}
+			table tr[data-state='playing'] .status-playing, table tr[data-state='stopped'] .status-stopped {
+				display: initial;
+			}
+			table tr[data-state='playing'] .status-stopped, table tr[data-state='stopped'] .status-playing  {
+				display: none;
+			}
+			.track[data-resume='0'] .play-fresh, .track:not([data-resume='0']) .play-resume {
+				display: initial;
+			}
+			.track[data-resume='0'] .play-resume, .track:not([data-resume='0']) .play-fresh {
+				display: none;
+			}
+			.track-pic img {
+				max-width: 50px;
+				height: auto;
+			}
+			.track-status {
+				text-align: center;
+				width: 2em;
+			}
+			.track-status a {
+				cursor: pointer;
+			}
+			.track-artist, .track-album, .track-title {
+				/*padding-left: 1px;*/
+			}
+			.track-pic {
+				height: 50px;
+				width: 50px;
+			}
+			#player {
+				position: sticky;
+				bottom: 0;
+				/*padding: 1px;*/
+				border-top: 1px solid var(--border);
+				left: 1px;
+				right: 1px;
+				text-align: center;
+				color: var(--player-title, var(--hi-fg));
+			}
+
+			#player #player-inner {
+				display: inline-block;
+				background-origin: border-box;
+				background-repeat: no-repeat;
+				background-size: contain;
+				width: 100%;
+				height: 100%;
+			}
+
+			audio::-webkit-media-controls-panel {
+				background-color: var(--audio-bg);
+			}
+
+			#player figure {
+				margin-bottom: 0;
+			}
+
+			#player #player-controls {
+				font-size: larger;
+				margin-bottom: 1em;
+			}
+
+			#player-controls a {
+				cursor: pointer;
+				margin-right: 0.5em;
+				text-decoration: none;
+			}
+
+			#player[data-state="playing"] a.play-btn, #player:not([data-state="playing"]) a.pause-btn {
+				display: none;
+			}
+
+			#player[data-state="playing"] a.pause-btn, #player:not([data-state="playing"]) a.play-btn {
+				display: unset;
+			}
+
+			#player .play-mode-btn {
+				display: none;
+			}
+
+			#player[data-mode="normal"] a.normal-btn {
+				display: unset;
+				opacity: 0.35;
+			}
+
+			#player[data-mode="repeat"] a.repeat-btn {
+				display: unset;
+				color: unset;
+			}
+
+			#player[data-mode="repeat-one"] a.repeat-one-btn {
+				display: unset;
+				color: unset;
+			}
+
+/*			#player[data-mode="repeat-one"] a.re {
+				display: unset;
+				color: unset;
+			}*/
+
+/*			#player[data-mode="repeat"] a.repeat-one-btn, #player:not([data-mode="repeat"]) a.repeat-btn {
+				display: unset;
+			}*/
+
+			#player-controls .download-btn:not([href]) {
+				filter: grayscale(1);
+			}
+
+			#player-controls .download-btn:not([href]), #player[data-shuffle="off"] .shuffle-btn {
+				/*display: none;*/
+				opacity: 0.35;
+			}
+
+			#player-controls .download-btn[href] {
+				display: unset;
+				color: unset;
+				filter: unset;
+			}
+
+			#player[data-shuffle="on"] .shuffle-btn {
+				color: unset;
+				filter: unset;
+			}
+
+			#other-controls {
+				display: flex;
+				flex-direction: column;
+				justify-content: space-between;
+				margin-top: 1em;
+				position: fixed;
+				bottom: 2em;
+				right: 2px;
+			}
+
+			#other-controls a {
+				margin-bottom: 1em;
+				margin-right: 0.5em;
+				cursor: pointer;
+			}
+
+			#player:not([data-track]) .delete-btn, #player:not([data-track]) .edit-btn {
+				opacity: 0.35;
+				filter: grayscale(1);
+			}
+			#player:not([data-multiselect="on"]) #multibox {
+				display: none;
+			}
+			#player[data-multiselect="on"] #multibox {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				border-bottom: 1px solid var(--border);
+				margin-top: -1px;
+			}
+			#player #multibox .multi-count::after {
+				content: counter(selectedtracks);
+			}
+			#player #multibox #multi-controls a {
+				cursor: pointer;
+				opacity: unset;
+				filter: unset;
+			}
+			#player #multibox #multi-unselect {
+				cursor: pointer;
+				align-self: center;
+				/*padding-left: 2px;*/
+				padding-right: 0.9em;
+			}			
+			#player[data-track] .delete-btn, #player[data-track] .edit-btn {
+				color: unset;
+				filter: unset;
+			}
+
+			#player-controls {
+				font-family: sans-serif;
+			}
+
+			/* TODO: fix. horribly broken ;_; */
+			@media (hover: none) {
+				table {
+					table-layout: fixed;
+					padding: 0 !important;
+					margin: 0;
+					overflow: hidden;
+				}
+				tr {
+					height: 50px;
+					overflow: hidden;
+				}
+				tr th:nth-child(1), tr td:nth-child(1) {
+					width: 10% !important;
+				}
+				tr th:nth-child(2), tr td:nth-child(2) {
+					width: 30% !important;
+				}
+				tr th:nth-child(3), tr td:nth-child(3) {
+					display: none;
+					/*width: 40% !important;*/
+				}
+				tr th:nth-child(4), tr td:nth-child(4) {
+					width: 30% !important;
+				}
+				#player #player-inner {
+					background-image: none !important;
+				}
+				#player audio {
+					max-width: 100%;
+				}
+				#other-controls {
+					float: unset;
+					position: fixed;
+					bottom: 2em;
+					right: 2px;
+				}
+				#other-controls a {
+					margin-right: 0;
+				}
+			}
+
+			#filter-bar {
+				position: sticky;
+				top: -1px;
+				padding-top: 1px;
+				z-index: 10;
+				width: 100%;
+				border-top: 1px solid var(--border);
+				border-bottom: 1px solid var(--border);
+				display: flex;
+				justify-content: space-between;
+			}
+			#filter-bar #filter-form {
+				display: flex;
+			}
+			#filter-bar #view-switcher {
+				text-align: right;
+				align-self: center;
+			}
+			#filter-cancel {
+				cursor: pointer;
+				align-self: center;
+				padding-left: 2px;
+				padding-right: 2px;
+			}
+
+			.album {
+				margin-bottom: 0.3em;
+			}
+			.album-inner {
+				display: flex;
+			}
+			.album-inner .album-cover {
+				/*min-width: 350px;*/
+				width: 350px;
+				max-width: 30vw;
+				max-height: 30vw;
+				height: auto;
+				object-fit: contain;
+				object-position: top;
+			}
+			.album-inner .album-cover.placeholder {
+				background-image: repeating-linear-gradient(-45deg, transparent, transparent 10px, #b6acad50 10px, #b6acad50 20px);
+			}
+			.album-inner .album-cover:hover {
+				cursor: pointer;
+				transform: translate(-2px, -2px);
+			}
+			.album ol {
+				margin-block-start: 0;
+			}
+			.album-inner .album-info {
+				padding-left: 1em;
+				flex-grow: 1;
+			}
+			.album .track:hover .track-title {
+				text-decoration: underline;
+			}
+			.album .track[data-state="playing"] .track-title {
+				font-weight: bold;
+			}
+		</style>
+		<style id="filter-style">
+		</style>
+	</head>
+	<body>
+		{{render "_nav" $}}
+		<main>
+			<h2>{{tr "music_title"}} <span id="loading-progress" {{with $.Next}} data-ct="{{len $.Tracks}}" {{end}}>{{tr "music_loading"}}</span></h2>
+
+			{{if (eq 0 (len $.Tracks))}}
+				<p>{{tr "music_notracks"}}</p>
+				<p>☛ <a href="/upload">{{tr "music_uploadhere"}}</a></p>
+			{{end}}
+
+			<header id="filter-bar" class="frosty">
+				<form id="filter-form" onsubmit="return updateFilter(arguments[0]),false;">
+					<input id="filter-input" type="text" oninput="updateFilter()" inputmode="search" placeholder="🔎"> 
+					<a id="filter-cancel" tabindex=0 onclick="document.getElementById('filter-input').value = ''; updateFilter(); return false;">✖︎</a>
+				</form>
+				<div id="view-switcher" class="menu">
+					<a href="/music" onclick="return visit(this),false;" {{if (eq $.View "music_all")}} class="active" {{end}}>{{tr "music_all"}}</a>
+					<a href="/music/albums" onclick="return visit(this),false;" {{if (eq $.View "music_albums")}} class="active" {{end}}>{{tr "music_albums"}}</a>
+					<!-- <a href="/music/playlists" onclick="return visit(this),false;" {{if (eq $.View "music_albums")}} class="active" {{end}}>playlists</a> -->
+					<!-- <a href="/music/podcastx" onclick="return visit(this),false;" {{if (eq $.View "music_albums")}} class="active" {{end}}>podcasts</a> -->
+				</div>
+			</header>
+
+			{{render $.View $}}
+		</main>
+
+		<div id="player" class="frosty" data-n="0" data-last-update="0" data-state="stopped" data-mode="normal" data-shuffle="off">
+			<div id="multibox">
+				<div></div>
+				<div id="multi-controls">
+					<!-- TODO: i18n -->
+					selected <span class="multi-count"></span> track(s): 
+					<a title='{{tr "player_play"}}' class="m-play-btn" tabindex=0 onclick="return playTracks(selectedTracks()),false;">▶️</a> 
+					<a title='{{tr "player_edit"}}' class="edit-btn" tabindex=0 onclick="return editTrack(selectedTracks()),false">📝</a> 
+					<a title='{{tr "player_delete"}}' class="delete-btn" tabindex=0 onclick="return deleteTrack(selectedTracks()),false">🗑️</a>
+				</div>
+				<a id="multi-unselect" tabindex=0 title='{{tr "music_deselect"}}' onclick="unselectTracks(); return false;">✖︎</a>
+			</div>
+			<div id="player-inner">
+				<div id="other-controls">
+					<a title='{{tr "player_edit"}}' class="edit-btn" tabindex=0 onclick="return editTrack(currentTrack()),false">📝</a>
+					<a title='{{tr "player_delete"}}' class="delete-btn" tabindex=0 onclick="return deleteTrack(),false">🗑️</a>
+				</div>
+				<figure>
+					<figcaption class="player-title" onclick="return scrollToTrack(currentTrack()),false;">&nbsp;</figcaption>
+					<audio controls></audio>
+				</figure>
+				<div id="player-controls">
+					<a title='{{tr "player_prev"}}' class="next-btn" tabindex=0 onclick="return playTrack(prevTrack(), true),false;">⏮️</a> 
+					<a title='{{tr "player_play"}}' class="play-btn" tabindex=0 onclick="return playTrack(currentTrack()),false;">▶️</a> 
+					<a title='{{tr "player_pause"}}' class="pause-btn" tabindex=0 onclick="return pauseTrack(currentTrack()),false;">⏸️</a> 
+					<a title='{{tr "player_next"}}' class="prev-btn" tabindex=0 onclick="return playTrack(nextTrack(), true),false;">⏭️</a>
+					<a title='{{tr "player_repeat"}}' class="repeat-btn play-mode-btn" tabindex=0 onclick="return setMode('repeat-one'),false;">🔁</a> <!--  --> 
+					<a title='{{tr "player_repeat-one"}}' class="repeat-one-btn play-mode-btn" tabindex=0 onclick="return setMode('normal'),false;">🔂</a>
+					<a title='{{tr "player_normal"}}' class="normal-btn play-mode-btn" tabindex=0 onclick="return setMode('repeat'),false;">🔁</a>
+					<a title='{{tr "player_shuffle"}}' class="shuffle-btn" tabindex=0 onclick="return toggleShuffle(),false;">🔀</a>
+					<a title='{{tr "player_download"}}' class="download-btn" tabindex=0 target="_blank" download>⤵️</a>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			{{template "music.gojs" $}}
+		</script>
+	</body>
+</html>
