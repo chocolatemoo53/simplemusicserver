@@ -22,7 +22,7 @@ func IsEnabled() bool {
 	return mailer != nil && mailer.client != nil
 }
 
-func Send(from, to, subject, content string, cc, bcc []string) error {
+func Send(from, to, subject, content string) error {
 	if mailer == nil {
 		return fmt.Errorf("mailer not initialized")
 	}
@@ -30,10 +30,8 @@ func Send(from, to, subject, content string, cc, bcc []string) error {
 	params := &resend.SendEmailRequest{
 		From:    from,
 		To:      []string{to},
-		Html:    content,
 		Subject: subject,
-		Cc:      cc,
-		Bcc:     bcc,
+		Html:    content,
 	}
 
 	sent, err := mailer.client.Emails.Send(params)
