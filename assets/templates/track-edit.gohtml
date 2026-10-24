@@ -23,9 +23,9 @@
 		<main>
 			<h2>{{tr "edit_title"}}</h2>
 			{{if $.Multi}}
-				<p>🛈 {{tr "edit_multiinfo"}}</p>
+				<p>{{tr "edit_multiinfo"}}</p>
 			{{end}}
-			<p class="error-msg">{{$.ErrorMsg}}</p>
+			<p class="error-msg">{{$.ErrorMsg | ucfirst}}</p>
 			<form action="/track/{{$.IDs}}/edit" method="POST" enctype="multipart/form-data">
 				<input type="hidden" name="id" value="{{$.Track.ID}}">
 				<table>
@@ -64,7 +64,7 @@
 							<td>{{tr "cover"}}</td>
 							<td>
 								{{if $.Track.Picture.ID}}
-									<img class="album-cover" alt="{{$.Track.Picture.Desc}}" src="{{$.Track.Picture.StorageKey | sign}}">
+									<img class="album-cover" alt="{{$.Track.Picture.Desc}}" src="{{$.Track.Picture.URL}}">
 								{{else}}
 									{{tr "none"}}
 								{{end}}

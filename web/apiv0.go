@@ -5,17 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/guregu/dynamo"
-	"github.com/guregu/kami"
-
 	"github.com/guregu/intertube/tube"
 )
 
 func init() {
-	kami.Post("/api/v0/login", loginV0)
-
-	kami.Use("/api/v0/tracks/", requireLogin)
-	kami.Get("/api/v0/tracks/", listTracksV0)
+	handle("POST /api/v0/login", loginV0)
+	handle("GET /api/v0/tracks", listTracksV0)
+	handle("GET /api/v0/tracks/{$}", listTracksV0)
 }
 
 func loginV0(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -31,18 +27,12 @@ func loginV0(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	pass := req.Password
 
 	user, err := tube.GetUserByEmail(ctx, email)
-	if err == tube.ErrNotFound {
-		panic("no user with that email")
-	}
-	if err != nil {
-		panic(err)
+	if err != nil || user.Unlock(ctx, pass) != nil {
+		renderJSON(w, struct{ Error string }{"wrong e-mail or password"}, http.StatusUnauthorized)
+		return
 	}
 
-	if !user.ValidPassword(pass) {
-		panic("bad password")
-	}
-
-	sesh, err := tube.CreateSession(ctx, user.ID, ipAddress(r))
+	sesh, err := tube.CreateSession(ctx, user)
 	if err != nil {
 		panic(err)
 	}
@@ -61,34 +51,22 @@ func loginV0(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 func listTracksV0(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
 
-	var startFrom dynamo.PagingKey
-	if start := r.URL.Query().Get("start"); start != "" {
-		startFrom, _ = dynamo.MarshalItem(struct {
-			UserID int
-			ID     string
-		}{
-			UserID: u.ID,
-			ID:     start,
-		})
-	}
-
 	data := struct {
 		Tracks tube.Tracks
 		Next   string
 	}{}
 
-	tracks, next, err := tube.GetTracksPartial(ctx, u.ID, 500, startFrom)
+	tracks, next, err := u.GetTracksPartial(ctx, 500, r.URL.Query().Get("start"))
 	if err != nil {
 		panic(err)
 	}
 	data.Tracks = tracks
 	for i, t := range data.Tracks {
-		t.DL = presignTrackDL(u, t)
+		t.DL = t.FileURL()
+		t.Lyrics = nil
 		data.Tracks[i] = t
 	}
-	if next != nil {
-		data.Next = *next["ID"].S
-	}
+	data.Next = next
 
 	renderJSON(w, data, http.StatusOK)
 }

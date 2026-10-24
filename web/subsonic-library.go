@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"encoding/xml"
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -33,7 +32,6 @@ func newSubsonicFolder(album *albumInfo) subsonicFolder {
 		IsDir:   true,
 	}
 	if album.picture != "" {
-		// TODO:
 		dir.CoverArt = tube.NewSSID(tube.SSIDTrack, album.picture).String()
 	}
 	return dir
@@ -45,17 +43,15 @@ type subsonicIndex struct {
 	Artists []subsonicArtist `json:"artist,omitempty"`
 }
 
-func newSubsonicIndexes(grp groupedTracks) []subsonicIndex {
+func newSubsonicIndexes(artists []*artistInfo) []subsonicIndex {
 	idxMap := make(map[rune]*subsonicIndex)
 
-	for _, a := range grp.artists {
-		albs := grp.albumsByEitherArtist[a]
-		if len(albs) == 0 || len(grp.trackMap[a][albs[0]]) == 0 {
+	for _, a := range artists {
+		if len(a.albums) == 0 {
 			continue
 		}
-		first := grp.trackMap[a][albs[0]][0]
 
-		r, _ := utf8.DecodeRuneInString(strings.ToUpper(a))
+		r, _ := utf8.DecodeRuneInString(strings.ToUpper(a.name))
 		idx, ok := idxMap[r]
 		if !ok {
 			idx = &subsonicIndex{
@@ -64,18 +60,7 @@ func newSubsonicIndexes(grp groupedTracks) []subsonicIndex {
 			idxMap[r] = idx
 		}
 
-		ai := subsonicArtist{
-			ID:   first.ArtistSSID(),
-			Name: a,
-			// Name: first.,
-			CoverArt:   first.TrackSSID().String(),
-			AlbumCount: len(albs),
-		}
-		if ai.AlbumCount == 0 {
-			// TODO fix
-			continue
-		}
-		idx.Artists = append(idx.Artists, ai)
+		idx.Artists = append(idx.Artists, newSubsonicArtist(a))
 	}
 
 	var indexes []subsonicIndex
@@ -89,7 +74,6 @@ func newSubsonicIndexes(grp groupedTracks) []subsonicIndex {
 }
 
 func subsonicGetMusicFolders(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	// TODO: this
 	type subsonicMusicFolder struct {
 		XMLName xml.Name `xml:"musicFolder" json:"-"`
 		ID      int      `xml:"id,attr" json:"id"`
@@ -183,7 +167,6 @@ func subsonicSearch2(ctx context.Context, w http.ResponseWriter, r *http.Request
 		query:  q,
 		size:   artistSize,
 		offset: artistOffset,
-		// ssid: tube.NewSSID(tube.SSIDFolder, mfid),
 	})
 	for _, a := range artists {
 		resp.Results.Artists = append(resp.Results.Artists, newSubsonicArtist(a))
@@ -240,7 +223,6 @@ func subsonicSearch3(ctx context.Context, w http.ResponseWriter, r *http.Request
 		query:  q,
 		size:   artistSize,
 		offset: artistOffset,
-		// ssid: tube.NewSSID(tube.SSIDFolder, mfid),
 	})
 	for _, a := range artists {
 		resp.Results.Artists = append(resp.Results.Artists, newSubsonicArtist(a))
@@ -311,7 +293,6 @@ func subsonicGetSongsByGenre(ctx context.Context, w http.ResponseWriter, r *http
 	writeSubsonic(ctx, w, r, resp)
 }
 
-// TODO: this is broken in json mode (doesn't turn into arrays)
 func subsonicGetStarred(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
 	match := tube.ParseSSID(r.FormValue("musicFolderId"))
@@ -361,8 +342,6 @@ func subsonicGetStarred(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		ssid:    match,
 		starred: true,
 	})
-	fmt.Println("STARS", tracks)
-	fmt.Println("LIB", lib.stars)
 	for _, t := range tracks {
 		resp.Starred.List = append(resp.Starred.List, newSubsonicSong(t, "song"))
 	}

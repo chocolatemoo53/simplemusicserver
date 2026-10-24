@@ -1,15 +1,8 @@
-# flyctl launch added from .gitignore
-**/intertube.exe
-**/intertube
-**/intertube.zip
-**/main
-**/env.sh
-**/env.ps1
-**/cmd/tubesync/tubesync.exe
-**/cmd/tubesync/tubesync
-**/deploydate
-**/*/node_modules
+.git
+.env
 **/config.toml
+**/data
 **/.DS_Store
-**/bootstrap
-fly.toml
+**/node_modules
+cmd/tubesync/tubesync
+cmd/tubesync/tubesync.exe

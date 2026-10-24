@@ -3,21 +3,15 @@ package web
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"path"
 	"strings"
 
-	// "github.com/aws/aws-lambda-go/events"
-	// "github.com/aws/aws-lambda-go/lambda"
-
 	"github.com/guregu/tag"
 	"github.com/hajimehoshi/go-mp3"
 	"github.com/mewkiz/flac"
-	"golang.org/x/crypto/sha3"
 
 	"github.com/guregu/intertube/storage"
 	"github.com/guregu/intertube/tube"
@@ -26,7 +20,6 @@ import (
 func uploadForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
 
-	// test lol
 	tracks, err := u.GetTracks(ctx)
 	if err != nil {
 		panic(err)
@@ -54,42 +47,13 @@ func uploadForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	renderTemplate(ctx, w, "upload", data, http.StatusOK)
 }
 
-func handleUpload(ctx context.Context, key string, user tube.User, b2ID string) (tube.Track, error) {
-	id := path.Base(key)
-
-	fmeta, err := tube.GetFile(ctx, id)
-	if err != nil {
-		return tube.Track{}, err
-	}
-
-	if fmeta.TrackID != "" {
-		log.Println("already exists?", fmeta.TrackID)
-		track, err := tube.GetTrack(ctx, user.ID, fmeta.TrackID)
-		if err == nil {
-			return track, nil
-		}
-		log.Println("error getting pre-existing track:", err)
-	}
-
-	log.Println("get file ...")
-
-	r, err := storage.UploadsBucket.Get(key)
-	if err != nil {
-		return tube.Track{}, err
-	}
-	defer r.Close()
-
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		return tube.Track{}, err
-	}
-	raw := bytes.NewReader(buf.Bytes())
+func processUpload(ctx context.Context, user tube.User, fmeta tube.File, data []byte) (tube.Track, error) {
+	raw := bytes.NewReader(data)
 
 	_, format, err := tag.Identify(raw)
 	if err != tag.ErrNoTagsFound && err != nil {
 		return tube.Track{}, err
 	}
-	// fmt.Println("GOT:", format, noTags)
 	if format == tag.UnknownFileType {
 		switch strings.ToLower(path.Ext(fmeta.Name)) {
 		case ".mp3":
@@ -105,20 +69,16 @@ func handleUpload(ctx context.Context, key string, user tube.User, b2ID string) 
 	}
 	raw.Seek(0, io.SeekStart)
 
-	log.Println("calcDuration ...")
-
 	dur, err := calcDuration(raw, format)
 	if err != nil && !skippableError(err) {
 		return tube.Track{}, err
 	}
 	raw.Seek(0, io.SeekStart)
 
-	// var tags tag.Metadata
 	var tags multiMeta
 	if got, err := tag.ReadID3v2Tags(raw); err == nil {
 		tags = append(tags, got)
 	}
-	// spew.Dump(tags)
 	raw.Seek(0, io.SeekStart)
 	if got, err := tag.ReadFrom(raw); err == nil {
 		tags = append(tags, got)
@@ -127,8 +87,6 @@ func handleUpload(ctx context.Context, key string, user tube.User, b2ID string) 
 	tags = append(tags, guessMetadata(fmeta.Name, format))
 	unfuckID3(tags)
 	raw.Seek(0, io.SeekStart)
-
-	log.Println("tag.SumAll ...")
 
 	sum, err := tag.SumAll(raw)
 	if err != nil {
@@ -146,82 +104,77 @@ func handleUpload(ctx context.Context, key string, user tube.User, b2ID string) 
 	}
 	trackInfo.Sanitize()
 
-	// TODO: don't need this anyway?
-	// meta := copyTags(tags.Raw(), "PIC", "APIC", "PIC\u0000")
+	trackID := user.TrackID(sum)
+	if existing, err := user.GetTrack(ctx, trackID); err == nil {
+		return existing, nil
+	} else if err != tube.ErrNotFound {
+		return tube.Track{}, err
+	}
+
 	track := tube.Track{
-		UserID: fmeta.UserID,
-		ID:     sum,
+		UserID:      user.ID,
+		ID:          trackID,
+		ContentHash: sum,
+		Object:      tube.NewObjectKey(user.ID),
 
 		Year: tags.Year(),
 
 		Filename: strings.ToValidUTF8(fmeta.Name, replacementChar),
 		Filetype: string(tags.FileType()),
 		UploadID: fmeta.ID,
-		Size:     buf.Len(),
+		Size:     len(data),
 		LocalMod: fmeta.LocalMod,
 		Duration: dur,
 
 		TagFormat: string(tags.Format()),
-		// Metadata:  meta,
 	}
 	track.Number, track.Total = tags.Track()
 	track.Disc, track.Discs = tags.Disc()
 	track.ApplyInfo(trackInfo)
+	if text := tags.Lyrics(); strings.TrimSpace(text) != "" {
+		lyrics := tube.ParseLyrics(text)
+		lyrics.Source = tube.LyricsFromFile
+		track.Lyrics = &lyrics
+	}
 
-	log.Println("copyUploadToFiles ...")
-	err = copyUploadToFiles(ctx, track.StorageKey(), b2ID, fmeta)
+	fileKey, wrapped, err := user.NewTrackFileKey(track.Object)
 	if err != nil {
+		return tube.Track{}, err
+	}
+	track.FileKey = wrapped
+	if err := encryptToBucket(ctx, track.Object, fileKey, data); err != nil {
 		return tube.Track{}, err
 	}
 
 	if pic := tags.Picture(); pic != nil {
-		log.Println("savePic ...")
-		track.Picture, err = savePic(pic.Data, pic.Ext, pic.Type, pic.Description)
+		track.Picture, err = savePicture(ctx, user, pic.Data, pic.Ext, pic.Type, pic.Description)
 		if err != nil {
+			storage.Delete(ctx, track.Object)
 			return tube.Track{}, err
 		}
 	}
 
-	log.Println("track.Create ...")
-
-	if err := track.Create(ctx); err != nil {
+	if err := user.CreateTrack(ctx, &track); err != nil {
+		storage.Delete(ctx, track.Object)
 		return tube.Track{}, err
 	}
-
-	log.Println("SetTrackID ...")
-
-	if err := fmeta.SetTrackID(track.ID); err != nil {
-		return tube.Track{}, err
-	}
-
 	return track, nil
 }
 
 var replacementChar = "�"
 
-func savePic(data []byte, ext string, mimetype string, desc string) (tube.Picture, error) {
-	id, err := sha3Sum(data)
-	if err != nil {
+func savePicture(ctx context.Context, u tube.User, data []byte, ext, mimetype, desc string) (tube.Picture, error) {
+	pic := u.PictureFor(data, ext, mimetype, desc)
+	if _, err := tube.ObjectSize(ctx, u.ID, pic.Object); err == nil {
+		return pic, nil
+	}
+	enc := tube.EncryptBytes(data, u.PictureKey(pic.ID), pic.Object)
+	if err := storage.FilesBucket.Put(ctx, "application/octet-stream", pic.Object, bytes.NewReader(enc)); err != nil {
 		return tube.Picture{}, err
 	}
-	pic := tube.Picture{
-		ID:   id,
-		Ext:  ext,
-		Type: mimetype,
-		Desc: desc,
-	}
-	err = storage.FilesBucket.Put(mimetype, pic.StorageKey(), bytes.NewReader(data))
-	return pic, err
+	return pic, tube.RecordObject(ctx, u.ID, pic.Object, tube.ObjectPicture, pic.Size)
 }
 
-// for images
-func sha3Sum(b []byte) (string, error) {
-	sum := sha3.Sum224(b)
-	str := base64.RawURLEncoding.EncodeToString(sum[:])
-	return str, nil
-}
-
-// secs
 func calcDuration(r io.ReadSeeker, ftype tag.FileType) (int, error) {
 	switch ftype {
 	case tag.MP3:
@@ -247,13 +200,7 @@ func calcDuration(r io.ReadSeeker, ftype tag.FileType) (int, error) {
 		sec := stream.Info.NSamples / uint64(stream.Info.SampleRate)
 		return int(sec), nil
 	case tag.M4A:
-		// TODO: need to find a go library with a proper license that parses these
 		return 0, nil
-		// secs, err := mp4util.Duration(r)
-		// if err != nil {
-		// return 0, err
-		// }
-		// return secs, nil
 	}
 	return 0, fmt.Errorf("unknown type: %v", ftype)
 }
@@ -263,6 +210,5 @@ func skippableError(err error) bool {
 		return true
 	}
 	str := err.Error()
-	// mp3 package chokes on certain files, so let it fail
 	return strings.Contains(str, "mp3:")
 }

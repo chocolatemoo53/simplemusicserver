@@ -1,9 +1,7 @@
 <section id="tracks">
-	<h3>results</h3>
+	<h3>Results</h3>
 	{{with $.Query}}
-		<p><b>query</b>: <samp>{{.}}</samp></p>
-	{{else}}
-		<p>searcjasiodjosia</p>
+		<p><b>Query</b>: <samp>{{.}}</samp></p>
 	{{end}}
 	<p>{{len $.Tracks}} tracks</p>
 	<ol id="tracks-list">

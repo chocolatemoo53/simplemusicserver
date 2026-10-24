@@ -1,0 +1,82 @@
+<div id="playlist" class="meat playlists-view">
+	<div class="playlists-toolbar">
+		<div class="playlists-title-group">
+			<h2>{{tr "music_playlists"}}</h2>
+			<span class="playlists-count">{{len $.Playlists}} playlist{{if ne (len $.Playlists) 1}}s{{end}}</span>
+		</div>
+		<a href="/playlist/" class="btn btn-primary">{{render "_icon" "plus"}} {{tr "playlist_create"}}</a>
+	</div>
+
+	{{if eq (len $.Playlists) 0}}
+		<div class="empty-state">
+			<p>{{tr "playlist_empty"}}</p>
+			<a href="/playlist/" class="btn btn-primary">{{render "_icon" "plus"}} {{tr "playlist_create"}}</a>
+		</div>
+	{{else}}
+		<div class="playlists-list">
+			{{range $pl := $.Playlists}}
+			<div class="album playlist-card meat-partial" id="pl-{{$pl.Playlist.ID}}" data-playlist="{{$pl.Playlist.ID}}" data-album="{{$pl.Playlist.Name}}" data-artist="Playlist">
+				<div class="album-inner playlist-inner">
+					<div class="album-info playlist-info">
+						<div class="playlist-header">
+							<div class="playlist-meta-group">
+								<h2 class="playlist-name">{{$pl.Playlist.Name}}</h2>
+								<p class="playlist-meta">
+									{{len $pl.Tracks}} track{{if ne (len $pl.Tracks) 1}}s{{end}} · {{$pl.Playlist.Duration | mmss}}
+									{{if $pl.Playlist.Dynamic}}<span class="playlist-badge">dynamic</span>{{end}}
+								</p>
+							</div>
+							<div class="playlist-actions">
+								{{if gt (len $pl.Tracks) 0}}
+								<button type="button" class="btn btn-primary" onclick="return playPlaylist(this),false;">
+									{{render "_icon" "play"}} {{tr "btn_play"}}
+								</button>
+								{{end}}
+								<a href="/playlist/{{$pl.Playlist.ID}}" class="btn">{{render "_icon" "edit"}} {{tr "btn_edit"}}</a>
+								<button type="button" class="btn btn-danger" onclick="return deletePlaylist({{$pl.Playlist.ID}}, '{{$pl.Playlist.Name}}'),false;">
+									{{render "_icon" "delete"}} {{tr "btn_delete"}}
+								</button>
+							</div>
+						</div>
+						{{if gt (len $pl.Tracks) 0}}
+						<ol class="meat-merge playlist-tracks-ol">
+						{{range $pl.Tracks}}
+							<li id="{{.ID}}" class="track" data-date="{{.Date}}"
+								data-src="{{.FileURL}}" data-filename="{{.Filename}}"
+								data-state="stopped" data-resume="{{.Resume}}"
+								data-artist="{{.Info.Artist}}" data-album-artist="{{.Info.AlbumArtist}}" data-any-artist="{{.AnyArtist}}"
+								data-title="{{.Info.Title}}" data-album="{{.Info.Album}}" data-genre="{{.Genre}}"
+								{{if (gt (len .Tags) 0)}} data-tags="{{.Tags | bespace}}" {{end}}
+								onclick="return toggleOrPlay('{{.ID}}', arguments[0]),false;">
+								<span class="track-status">
+									<span class="status-stopped">
+										<a tabindex=0 role="button" aria-label='{{tr "player_play"}}' onclick="arguments[0].stopPropagation();return playTrack('{{.ID}}', false, arguments[0]),false;">
+											<span class="play-fresh">{{render "_icon" "play"}}</span>
+											<span class="play-resume">{{render "_icon" "resume"}}</span>
+										</a>
+									</span>
+									<span class="status-playing">
+										<a tabindex=0 onclick="arguments[0].stopPropagation();return pauseTrack('{{.ID}}', false, arguments[0]),false;" role="button" aria-label='{{tr "player_pause"}}'>{{render "_icon" "pause"}}</a>
+									</span>
+								</span>
+								<span class="track-title">{{with .Info.Title}}{{.}}{{else}}untitled{{end}}</span>
+								<span class="track-artist">{{with .Info.Artist}}{{.}}{{else}}{{.Info.AlbumArtist}}{{end}}</span>
+								<span class="track-album">{{.Info.Album}}</span>
+								<span class="track-pic" style="display: none;">
+									{{if .Picture.ID}}
+										<img class="album-cover" alt="{{.Picture.Desc}}" src="{{.Picture.URL}}" loading="lazy">
+									{{end}}
+								</span>
+							</li>
+						{{end}}
+						</ol>
+						{{else}}
+						<p class="empty-notice">No tracks in this playlist yet.</p>
+						{{end}}
+					</div>
+				</div>
+			</div>
+			{{end}}
+		</div>
+	{{end}}
+</div>

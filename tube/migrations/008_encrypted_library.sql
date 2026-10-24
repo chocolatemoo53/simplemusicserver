@@ -1,0 +1,29 @@
+DROP TABLE tracks;
+
+CREATE TABLE tracks (
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	id TEXT NOT NULL,
+	object TEXT NOT NULL,
+	size INTEGER NOT NULL,
+	data BLOB NOT NULL,
+	PRIMARY KEY (user_id, id)
+) WITHOUT ROWID;
+
+DROP TABLE playlists;
+
+CREATE TABLE playlists (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	data BLOB NOT NULL
+);
+
+CREATE INDEX playlists_user ON playlists (user_id);
+
+DROP TABLE stars;
+
+CREATE TABLE stars (
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	key TEXT NOT NULL,
+	data BLOB NOT NULL,
+	PRIMARY KEY (user_id, key)
+) WITHOUT ROWID;

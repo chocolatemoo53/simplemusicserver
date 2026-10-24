@@ -1,378 +1,706 @@
 <!doctype html>
-<html>
+<html lang="{{lang}}">
 	<head>
 		{{render "_head" $}}
 		<title>{{tr "titleprefix"}}{{tr "music_title"}}</title>
 		<style>
 			{{$opt := opts}}
-			table {
-				{{if $opt.Stretch}}
-					width: 100%;
-				{{else}}
-					width: 110ch;
-				{{end}}
-				margin: auto;
-				/*width: 100%;*/
-				/*max-width: 100%;*/
-				/*border: 1px solid black;*/
-				margin-top: 1em;
-				margin-bottom: 1em;
-				table-layout: fixed;
-				padding-left: 1vw;
-				padding-right: 1vw;
-			}
-			@media screen and (max-width: 120ch) {
-				table {
-					width: 100%;
-				}
-			}
 			main {
-				min-height: 100vh;
 				counter-reset: selectedtracks;
 			}
+			{{if (not $opt.Stretch)}}
+			#playlist {
+				max-width: 1280px;
+			}
+			{{end}}
+			.page-head {
+				display: flex;
+				align-items: baseline;
+				gap: 16px;
+			}
 			#loading-progress {
-				font-size: smaller;
 				display: none;
+				font-size: 15px;
+				color: var(--muted);
 			}
 			#loading-progress[data-ct] {
-				display: unset;
+				display: inline;
 			}
-			/*table {
-				-webkit-transform: translate3d(0, 0, 0);
-				         transform: translate3d(0, 0, 0);
-			}*/
-			table th {
-				text-align: left;
+
+			#filter-bar {
+				position: sticky;
+				top: 0;
+				z-index: 10;
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				margin: 16px -40px 8px;
+				padding: 12px 40px;
+				border-bottom: 1px solid var(--line);
+				background: var(--bg);
 			}
-			.sort-row a, .sort-row a:visited {
-				color: var(--links);
+			#filter-form {
+				display: flex;
+				flex: 1 1 320px;
+				max-width: 560px;
+				gap: 8px;
+			}
+			.search {
+				flex: 1;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				min-height: 44px;
+				padding: 0 14px;
+				border: 1px solid var(--control);
+				border-radius: var(--r);
+				background: var(--surface);
+				color: var(--muted);
+			}
+			.search:focus-within {
+				outline: 3px solid var(--accent);
+				outline-offset: 2px;
+			}
+			.search input {
+				flex: 1;
+				min-width: 0;
+				min-height: 40px;
+				padding: 0;
+				border: none;
+				background: transparent;
+				outline: none;
+			}
+			.seg {
+				display: inline-flex;
+				padding: 4px;
+				border: 1px solid var(--line);
+				border-radius: var(--r);
+				background: var(--surface);
+			}
+			.seg a {
+				display: inline-flex;
+				align-items: center;
+				min-height: 36px;
+				padding: 0 14px;
+				border-radius: var(--radius, 9px);
+				color: var(--muted);
+				font-size: 15px;
+				font-weight: 500;
 				text-decoration: none;
 			}
-			.sort-row a:hover {
-				/*text-decoration: underline;*/
+			.seg a.active {
+				background: var(--bg);
+				color: var(--text);
+				font-weight: 600;
+				box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+			}
+
+			#playlist {
+				width: 100%;
+				table-layout: fixed;
+				font-size: 16px;
+			}
+			#playlist th {
+				padding: 10px 12px;
+				border-bottom: 1px solid var(--line);
+			}
+			.sort-row a {
+				color: var(--muted);
+				text-decoration: none;
+			}
+			.sort-row a:hover, .sort-row a.active {
+				color: var(--text);
 			}
 			.sort-row a.active[data-reverse='true']::after {
-				content: " ▼";
+				content: " ↓";
 			}
 			.sort-row a.active[data-reverse='false']::after {
-				content: " ▲";
+				content: " ↑";
 			}
-			.sort-row a:not(.active):hover::after {
-				content: " ▲";
+			#playlist td {
+				height: 56px;
+				padding: 0 12px;
+				border-bottom: 1px solid var(--line-soft);
+				color: var(--muted);
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
 			}
-/*			.sort-row a:not(.active)[data-reverse='false']::after {
-				content: " ▲";
-			}*/
+			#playlist td a {
+				color: inherit;
+				text-decoration: none;
+			}
+			#playlist td.track-title {
+				color: var(--text);
+				font-weight: 500;
+			}
+			.track-status {
+				width: 56px;
+				text-align: center;
+			}
+			#playlist td.track-status {
+				padding: 0 8px;
+				text-overflow: clip;
+			}
+			.track-status a {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: 36px;
+				height: 36px;
+				border-radius: var(--r-pill);
+				color: var(--accent);
+				cursor: pointer;
+			}
+			.track-status a:hover {
+				background: var(--accent-soft);
+			}
+			th.track-pic, td.track-pic {
+				width: 72px;
+			}
+			.track-pic img {
+				display: block;
+				width: 40px;
+				height: 40px;
+				border-radius: var(--radius, 6px);
+				object-fit: cover;
+			}
 			.track[data-state='playing'] {
-				background: var(--hi-bg);
-				color: var(--hi-fg);
+				background: var(--surface);
+			}
+			#playlist .track[data-state='playing'] td.track-title, .album .track[data-state='playing'] .track-title {
+				color: var(--accent);
+				font-weight: 600;
 			}
 			.track[data-selected="true"] {
-				background-image: repeating-linear-gradient(-45deg, transparent, transparent 10px, var(--hi-bg) 10px, var(--hi-bg) 20px);
-				/*color: var(--hi-fg);*/
+				background: var(--accent-soft);
 				counter-increment: selectedtracks;
+			}
+			table tr[data-state='playing'] .status-playing, table tr[data-state='stopped'] .status-stopped {
+				display: initial;
+			}
+			table tr[data-state='playing'] .status-stopped, table tr[data-state='stopped'] .status-playing {
+				display: none;
+			}
+			.track[data-resume='0'] .play-fresh, .track:not([data-resume='0']) .play-resume {
+				display: inline-flex;
+			}
+			.track[data-resume='0'] .play-resume, .track:not([data-resume='0']) .play-fresh {
+				display: none;
 			}
 			@media (hover: hover) {
 				.track:hover {
 					cursor: pointer;
 				}
+				.track[data-state='stopped']:hover {
+					background: var(--surface);
+				}
 				.track td a:hover, a.album-artist:hover {
-					cursor: pointer;
 					text-decoration: underline;
 				}
 				table tr[data-state='stopped'] .status-stopped {
 					visibility: hidden;
 				}
-				.track[data-state='stopped']:hover {
-					background: var(--hi-bg);
-					color: var(--hi-fg);
-				}
-				table tr[data-state='stopped']:hover .status-stopped {
+				table tr[data-state='stopped']:hover .status-stopped, table tr[data-state='stopped'] .status-stopped:focus-within {
 					visibility: visible;
 				}
-				#player figcaption:hover {
-					cursor: pointer;
-				}
-			}
-			table tr[data-state='playing'] .status-playing, table tr[data-state='stopped'] .status-stopped {
-				display: initial;
-			}
-			table tr[data-state='playing'] .status-stopped, table tr[data-state='stopped'] .status-playing  {
-				display: none;
-			}
-			.track[data-resume='0'] .play-fresh, .track:not([data-resume='0']) .play-resume {
-				display: initial;
-			}
-			.track[data-resume='0'] .play-resume, .track:not([data-resume='0']) .play-fresh {
-				display: none;
-			}
-			.track-pic img {
-				max-width: 50px;
-				height: auto;
-			}
-			.track-status {
-				text-align: center;
-				width: 2em;
-			}
-			.track-status a {
-				cursor: pointer;
-			}
-			.track-artist, .track-album, .track-title {
-				/*padding-left: 1px;*/
-			}
-			.track-pic {
-				height: 50px;
-				width: 50px;
-			}
-			#player {
-				position: sticky;
-				bottom: 0;
-				/*padding: 1px;*/
-				border-top: 1px solid var(--border);
-				left: 1px;
-				right: 1px;
-				text-align: center;
-				color: var(--player-title, var(--hi-fg));
-			}
-
-			#player #player-inner {
-				display: inline-block;
-				background-origin: border-box;
-				background-repeat: no-repeat;
-				background-size: contain;
-				width: 100%;
-				height: 100%;
-			}
-
-			audio::-webkit-media-controls-panel {
-				background-color: var(--audio-bg);
-			}
-
-			#player figure {
-				margin-bottom: 0;
-			}
-
-			#player #player-controls {
-				font-size: larger;
-				margin-bottom: 1em;
-			}
-
-			#player-controls a {
-				cursor: pointer;
-				margin-right: 0.5em;
-				text-decoration: none;
-			}
-
-			#player[data-state="playing"] a.play-btn, #player:not([data-state="playing"]) a.pause-btn {
-				display: none;
-			}
-
-			#player[data-state="playing"] a.pause-btn, #player:not([data-state="playing"]) a.play-btn {
-				display: unset;
-			}
-
-			#player .play-mode-btn {
-				display: none;
-			}
-
-			#player[data-mode="normal"] a.normal-btn {
-				display: unset;
-				opacity: 0.35;
-			}
-
-			#player[data-mode="repeat"] a.repeat-btn {
-				display: unset;
-				color: unset;
-			}
-
-			#player[data-mode="repeat-one"] a.repeat-one-btn {
-				display: unset;
-				color: unset;
-			}
-
-/*			#player[data-mode="repeat-one"] a.re {
-				display: unset;
-				color: unset;
-			}*/
-
-/*			#player[data-mode="repeat"] a.repeat-one-btn, #player:not([data-mode="repeat"]) a.repeat-btn {
-				display: unset;
-			}*/
-
-			#player-controls .download-btn:not([href]) {
-				filter: grayscale(1);
-			}
-
-			#player-controls .download-btn:not([href]), #player[data-shuffle="off"] .shuffle-btn {
-				/*display: none;*/
-				opacity: 0.35;
-			}
-
-			#player-controls .download-btn[href] {
-				display: unset;
-				color: unset;
-				filter: unset;
-			}
-
-			#player[data-shuffle="on"] .shuffle-btn {
-				color: unset;
-				filter: unset;
-			}
-
-			#other-controls {
-				display: flex;
-				flex-direction: column;
-				justify-content: space-between;
-				margin-top: 1em;
-				position: fixed;
-				bottom: 2em;
-				right: 2px;
-			}
-
-			#other-controls a {
-				margin-bottom: 1em;
-				margin-right: 0.5em;
-				cursor: pointer;
-			}
-
-			#player:not([data-track]) .delete-btn, #player:not([data-track]) .edit-btn {
-				opacity: 0.35;
-				filter: grayscale(1);
-			}
-			#player:not([data-multiselect="on"]) #multibox {
-				display: none;
-			}
-			#player[data-multiselect="on"] #multibox {
-				display: flex;
-				align-items: center;
-				justify-content: space-between;
-				border-bottom: 1px solid var(--border);
-				margin-top: -1px;
-			}
-			#player #multibox .multi-count::after {
-				content: counter(selectedtracks);
-			}
-			#player #multibox #multi-controls a {
-				cursor: pointer;
-				opacity: unset;
-				filter: unset;
-			}
-			#player #multibox #multi-unselect {
-				cursor: pointer;
-				align-self: center;
-				/*padding-left: 2px;*/
-				padding-right: 0.9em;
-			}			
-			#player[data-track] .delete-btn, #player[data-track] .edit-btn {
-				color: unset;
-				filter: unset;
-			}
-
-			#player-controls {
-				font-family: sans-serif;
-			}
-
-			/* TODO: fix. horribly broken ;_; */
-			@media (hover: none) {
-				table {
-					table-layout: fixed;
-					padding: 0 !important;
-					margin: 0;
-					overflow: hidden;
-				}
-				tr {
-					height: 50px;
-					overflow: hidden;
-				}
-				tr th:nth-child(1), tr td:nth-child(1) {
-					width: 10% !important;
-				}
-				tr th:nth-child(2), tr td:nth-child(2) {
-					width: 30% !important;
-				}
-				tr th:nth-child(3), tr td:nth-child(3) {
-					display: none;
-					/*width: 40% !important;*/
-				}
-				tr th:nth-child(4), tr td:nth-child(4) {
-					width: 30% !important;
-				}
-				#player #player-inner {
-					background-image: none !important;
-				}
-				#player audio {
-					max-width: 100%;
-				}
-				#other-controls {
-					float: unset;
-					position: fixed;
-					bottom: 2em;
-					right: 2px;
-				}
-				#other-controls a {
-					margin-right: 0;
-				}
-			}
-
-			#filter-bar {
-				position: sticky;
-				top: -1px;
-				padding-top: 1px;
-				z-index: 10;
-				width: 100%;
-				border-top: 1px solid var(--border);
-				border-bottom: 1px solid var(--border);
-				display: flex;
-				justify-content: space-between;
-			}
-			#filter-bar #filter-form {
-				display: flex;
-			}
-			#filter-bar #view-switcher {
-				text-align: right;
-				align-self: center;
-			}
-			#filter-cancel {
-				cursor: pointer;
-				align-self: center;
-				padding-left: 2px;
-				padding-right: 2px;
 			}
 
 			.album {
-				margin-bottom: 0.3em;
+				padding: 24px 0;
+				border-bottom: 1px solid var(--line-soft);
 			}
 			.album-inner {
 				display: flex;
+				gap: 28px;
 			}
 			.album-inner .album-cover {
-				/*min-width: 350px;*/
-				width: 350px;
-				max-width: 30vw;
-				max-height: 30vw;
-				height: auto;
-				object-fit: contain;
-				object-position: top;
-			}
-			.album-inner .album-cover.placeholder {
-				background-image: repeating-linear-gradient(-45deg, transparent, transparent 10px, #b6acad50 10px, #b6acad50 20px);
-			}
-			.album-inner .album-cover:hover {
+				flex: none;
+				width: 200px;
+				max-width: 32vw;
+				aspect-ratio: 1 / 1;
+				border-radius: var(--radius, 10px);
+				background: var(--surface);
+				object-fit: cover;
 				cursor: pointer;
-				transform: translate(-2px, -2px);
-			}
-			.album ol {
-				margin-block-start: 0;
 			}
 			.album-inner .album-info {
-				padding-left: 1em;
-				flex-grow: 1;
+				flex: 1;
+				min-width: 0;
+			}
+			.album-info h2 {
+				margin: 0 0 8px;
+				font-size: 20px;
+			}
+			.album-info h2 a {
+				color: var(--muted);
+				font-weight: 500;
+				cursor: pointer;
+			}
+			.album ol {
+				margin: 0;
+				padding-left: 2.2em;
+				color: var(--muted);
+			}
+			.album li.track {
+				padding: 8px 10px;
+				border-radius: var(--r-s);
+			}
+			.album .track-title {
+				color: var(--text);
 			}
 			.album .track:hover .track-title {
 				text-decoration: underline;
 			}
-			.album .track[data-state="playing"] .track-title {
-				font-weight: bold;
+
+			.playlists-toolbar {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: space-between;
+				gap: 16px;
+				margin-bottom: 24px;
+				padding-bottom: 16px;
+				border-bottom: 1px solid var(--line);
+			}
+			.playlists-title-group {
+				display: flex;
+				align-items: baseline;
+				gap: 12px;
+			}
+			.playlists-title-group h2 {
+				margin: 0;
+				font-size: 22px;
+			}
+			.playlists-count {
+				color: var(--muted);
+				font-size: 15px;
+			}
+			.playlist-card {
+				padding: 20px 0 28px;
+				border-bottom: 1px solid var(--line-soft);
+			}
+			.playlist-header {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				margin-bottom: 14px;
+			}
+			.playlist-name {
+				margin: 0;
+				font-size: 18px;
+				font-weight: 600;
+			}
+			.playlist-meta {
+				margin: 4px 0 0;
+				color: var(--muted);
+				font-size: 14px;
+			}
+			.playlist-badge {
+				display: inline-block;
+				margin-left: 6px;
+				padding: 2px 8px;
+				border-radius: var(--r-s);
+				background: var(--surface);
+				border: 1px solid var(--line);
+				color: var(--muted);
+				font-size: 12px;
+				font-weight: 500;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+			}
+			.playlist-actions {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.playlist-tracks-ol {
+				margin: 0;
+				padding: 0;
+				list-style: none;
+			}
+			.playlist-tracks-ol li.track {
+				display: grid;
+				grid-template-columns: 24px minmax(180px, 2fr) minmax(120px, 1fr) minmax(120px, 1fr);
+				align-items: center;
+				gap: 14px;
+				padding: 8px 10px;
+				border-radius: var(--r-s);
+				cursor: pointer;
+			}
+			.playlist-tracks-ol li.track:hover {
+				background: var(--surface);
+			}
+			.playlist-tracks-ol .track-title {
+				color: var(--text);
+				font-weight: 500;
+			}
+			.playlist-tracks-ol .track-artist,
+			.playlist-tracks-ol .track-album {
+				color: var(--muted);
+				font-size: 14px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.empty-state {
+				padding: 48px 0;
+				text-align: center;
+				color: var(--muted);
+			}
+			.empty-notice {
+				padding: 16px 0;
+				color: var(--muted);
+				font-style: italic;
+			}
+
+			#player {
+				position: sticky;
+				bottom: 0;
+				z-index: 20;
+				border-top: 1px solid var(--line);
+				background: var(--bg);
+			}
+			#player-inner {
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+				align-items: center;
+				gap: 24px;
+				padding: 12px 40px;
+			}
+			.now {
+				display: flex;
+				align-items: center;
+				gap: 14px;
+				min-width: 0;
+				margin: 0;
+			}
+			.player-cover {
+				flex: none;
+				width: 56px;
+				height: 56px;
+				border-radius: var(--radius, 8px);
+				object-fit: cover;
+				background: var(--surface);
+			}
+			.player-title {
+				min-width: 0;
+				font-size: 16px;
+				font-weight: 600;
+				line-height: 1.35;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				cursor: pointer;
+			}
+			.player-title b, .player-title span {
+				display: block;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.player-title span {
+				color: var(--muted);
+				font-size: 15px;
+				font-weight: 400;
+			}
+			#player audio {
+				display: none;
+			}
+			.transport {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 2px;
+			}
+			.transport-row, .tools {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.tools {
+				justify-content: flex-end;
+				gap: 4px;
+			}
+			.ib {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: 44px;
+				min-height: 44px;
+				height: 44px;
+				padding: 0;
+				border: none;
+				border-radius: var(--r-pill);
+				background: transparent;
+				color: var(--text);
+			}
+			.ib:hover {
+				background: var(--surface);
+			}
+			.ib.big {
+				width: 52px;
+				height: 52px;
+				background: var(--accent);
+				color: var(--on-accent);
+			}
+			.ib.big:hover {
+				background: var(--accent-ink);
+			}
+			.ib.big .icon {
+				width: 22px;
+				height: 22px;
+				stroke-width: 2.2;
+			}
+			#player[data-state="playing"] .play-btn, #player:not([data-state="playing"]) .pause-btn {
+				display: none;
+			}
+			#player .play-mode-btn {
+				display: none;
+			}
+			#player[data-mode="normal"] .normal-btn {
+				display: inline-flex;
+				color: var(--muted);
+			}
+			#player[data-mode="repeat"] .repeat-btn, #player[data-mode="repeat-one"] .repeat-one-btn {
+				display: inline-flex;
+				color: var(--accent);
+			}
+			#player[data-shuffle="off"] .shuffle-btn {
+				color: var(--muted);
+			}
+			#player[data-shuffle="on"] .shuffle-btn {
+				color: var(--accent);
+			}
+			#player .download-btn:not([href]), #player:not([data-track]) .tools .edit-btn, #player:not([data-track]) .tools .delete-btn {
+				opacity: 0.4;
+				pointer-events: none;
+			}
+			.seek {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				width: 100%;
+				font-size: 13px;
+				color: var(--muted);
+			}
+			input[type="range"] {
+				--fill: 0%;
+				flex: 1;
+				height: 24px;
+				margin: 0;
+				background: transparent;
+				accent-color: var(--accent);
+				-webkit-appearance: none;
+				appearance: none;
+				cursor: pointer;
+			}
+			input[type="range"]::-webkit-slider-runnable-track {
+				height: 6px;
+				border-radius: 999px;
+				background: linear-gradient(to right, var(--accent) var(--fill), var(--line) var(--fill));
+			}
+			input[type="range"]::-moz-range-track {
+				height: 6px;
+				border-radius: 999px;
+				background: linear-gradient(to right, var(--accent) var(--fill), var(--line) var(--fill));
+			}
+			input[type="range"]::-webkit-slider-thumb {
+				-webkit-appearance: none;
+				width: 14px;
+				height: 14px;
+				margin-top: -4px;
+				border: none;
+				border-radius: 999px;
+				background: var(--accent);
+				box-shadow: 0 0 0 3px var(--bg);
+			}
+			input[type="range"]::-moz-range-thumb {
+				width: 14px;
+				height: 14px;
+				border: none;
+				border-radius: 999px;
+				background: var(--accent);
+				box-shadow: 0 0 0 3px var(--bg);
+			}
+			.volume-bar {
+				flex: 0 0 104px;
+			}
+			.tools .icon-volume {
+				margin-left: 6px;
+				color: var(--muted);
+			}
+
+			#multibox {
+				display: none;
+			}
+			#player[data-multiselect="on"] #multibox {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: space-between;
+				gap: 8px;
+				padding: 8px 40px;
+				border-bottom: 1px solid var(--line);
+				background: var(--accent-soft);
+				font-size: 15px;
+			}
+			#multi-controls {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 8px;
+			}
+			#multibox .multi-count::after {
+				content: counter(selectedtracks);
+			}
+			#multibox button {
+				min-height: 40px;
+				padding: 0 14px;
+				font-size: 15px;
+			}
+
+			#lyrics-panel {
+				border-bottom: 1px solid var(--line);
+				background: var(--bg);
+			}
+			#lyrics-panel[hidden] {
+				display: none;
+			}
+			.lyrics-head {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				padding: 8px 32px 0 40px;
+			}
+			.lyrics-head h2 {
+				display: inline;
+				margin: 0 12px 0 0;
+				font-size: 17px;
+			}
+			.lyrics-source {
+				font-size: 14px;
+				color: var(--muted);
+			}
+			.lyrics-body {
+				position: relative;
+				max-height: 40vh;
+				overflow-y: auto;
+				padding: 4px 40px 20px;
+			}
+			.lyrics-message {
+				margin: 8px 0;
+				color: var(--muted);
+			}
+			.lyrics-message:empty {
+				display: none;
+			}
+			.lyrics-lines {
+				max-width: 46rem;
+				margin: 0;
+				padding: 0;
+				list-style: none;
+			}
+			.lyrics-lines button {
+				display: block;
+				width: 100%;
+				min-height: 0;
+				padding: 6px 10px;
+				border: none;
+				border-radius: var(--r-s);
+				background: transparent;
+				color: var(--muted);
+				font-size: 20px;
+				font-weight: 500;
+				line-height: 1.4;
+				text-align: left;
+			}
+			.lyrics-lines button:hover {
+				background: var(--surface);
+				color: var(--text);
+			}
+			.lyrics-lines li[aria-current] button {
+				color: var(--text);
+				font-weight: 600;
+			}
+			.lyrics-lines.plain li {
+				min-height: 1.4em;
+				padding: 2px 10px;
+				font-size: 18px;
+				line-height: 1.5;
+			}
+			.lyrics-settings {
+				margin: 8px 0 0;
+				font-size: 15px;
+				color: var(--muted);
+			}
+			.lyrics-btn[aria-expanded="true"] {
+				background: var(--accent-soft);
+				color: var(--accent);
+			}
+
+			@media screen and (max-width: 767px) {
+				#filter-bar {
+					margin: 12px -16px 8px;
+					padding: 10px 16px;
+				}
+				#playlist .track-album, .track-pic {
+					display: none;
+				}
+				.track-status {
+					width: 44px;
+				}
+				.album-inner {
+					flex-direction: column;
+					gap: 12px;
+				}
+				.album-inner .album-cover {
+					width: 120px;
+					max-width: none;
+				}
+				#player-inner {
+					grid-template-columns: minmax(0, 1fr) auto auto;
+					gap: 4px 8px;
+					padding: 8px 12px 12px;
+				}
+				.player-cover {
+					width: 44px;
+					height: 44px;
+				}
+				.transport {
+					display: contents;
+				}
+				.transport-row {
+					grid-row: 1;
+					grid-column: 2;
+					gap: 0;
+				}
+				.transport-row .shuffle-btn, .transport-row .play-mode-btn, .transport-row .prev-btn, .tools > :not(.lyrics-btn) {
+					display: none !important;
+				}
+				.tools {
+					grid-row: 1;
+					grid-column: 3;
+				}
+				.lyrics-head {
+					padding: 8px 8px 0 16px;
+				}
+				.lyrics-body {
+					padding: 4px 12px 16px;
+				}
+				.lyrics-lines button {
+					font-size: 18px;
+				}
+				.seek {
+					grid-column: 1 / -1;
+				}
+				#player[data-multiselect="on"] #multibox {
+					padding: 8px 12px;
+				}
 			}
 		</style>
 		<style id="filter-style">
@@ -381,60 +709,89 @@
 	<body>
 		{{render "_nav" $}}
 		<main>
-			<h2>{{tr "music_title"}} <span id="loading-progress" {{with $.Next}} data-ct="{{len $.Tracks}}" {{end}}>{{tr "music_loading"}}</span></h2>
+			<div class="page-head">
+				<h1>{{tr "music_title"}}</h1>
+				<span id="loading-progress" {{with $.Next}} data-ct="{{len $.Tracks}}" {{end}}>{{tr "music_loading"}}</span>
+			</div>
 
 			{{if (eq 0 (len $.Tracks))}}
 				<p>{{tr "music_notracks"}}</p>
-				<p>☛ <a href="/upload">{{tr "music_uploadhere"}}</a></p>
+				<p><a class="btn btn-primary" href="/upload">{{tr "music_uploadhere"}}</a></p>
 			{{end}}
 
-			<header id="filter-bar" class="frosty">
-				<form id="filter-form" onsubmit="return updateFilter(arguments[0]),false;">
-					<input id="filter-input" type="text" oninput="updateFilter()" inputmode="search" placeholder="🔎"> 
-					<a id="filter-cancel" tabindex=0 onclick="document.getElementById('filter-input').value = ''; updateFilter(); return false;">✖︎</a>
+			<header id="filter-bar">
+				<form id="filter-form" role="search" onsubmit="return updateFilter(arguments[0]),false;">
+					<label class="search">
+						{{render "_icon" "search"}}
+						<span class="visually-hidden">{{tr "music_search"}}</span>
+						<input id="filter-input" type="search" oninput="updateFilter()" placeholder='{{tr "music_search_placeholder"}}' autocomplete="off">
+					</label>
+					<button type="button" id="filter-cancel" onclick="document.getElementById('filter-input').value = ''; updateFilter(); return false;">{{tr "btn_clear"}}</button>
 				</form>
-				<div id="view-switcher" class="menu">
+				<nav id="view-switcher" class="menu seg" aria-label='{{tr "music_view"}}'>
 					<a href="/music" onclick="return visit(this),false;" {{if (eq $.View "music_all")}} class="active" {{end}}>{{tr "music_all"}}</a>
 					<a href="/music/albums" onclick="return visit(this),false;" {{if (eq $.View "music_albums")}} class="active" {{end}}>{{tr "music_albums"}}</a>
-					<!-- <a href="/music/playlists" onclick="return visit(this),false;" {{if (eq $.View "music_albums")}} class="active" {{end}}>playlists</a> -->
-					<!-- <a href="/music/podcastx" onclick="return visit(this),false;" {{if (eq $.View "music_albums")}} class="active" {{end}}>podcasts</a> -->
-				</div>
+					<a href="/music/playlists" onclick="return visit(this),false;" {{if (eq $.View "music_playlists")}} class="active" {{end}}>{{tr "music_playlists"}}</a>
+				</nav>
 			</header>
 
 			{{render $.View $}}
 		</main>
 
-		<div id="player" class="frosty" data-n="0" data-last-update="0" data-state="stopped" data-mode="normal" data-shuffle="off">
+		<div id="player" role="region" aria-label='{{tr "player"}}' data-n="0" data-last-update="0" data-state="stopped" data-mode="normal" data-shuffle="off">
 			<div id="multibox">
-				<div></div>
+				<span>{{tr "multi_selected"}} <span class="multi-count"></span></span>
 				<div id="multi-controls">
-					<!-- TODO: i18n -->
-					selected <span class="multi-count"></span> track(s): 
-					<a title='{{tr "player_play"}}' class="m-play-btn" tabindex=0 onclick="return playTracks(selectedTracks()),false;">▶️</a> 
-					<a title='{{tr "player_edit"}}' class="edit-btn" tabindex=0 onclick="return editTrack(selectedTracks()),false">📝</a> 
-					<a title='{{tr "player_delete"}}' class="delete-btn" tabindex=0 onclick="return deleteTrack(selectedTracks()),false">🗑️</a>
+					<button type="button" class="m-play-btn" onclick="return playTracks(selectedTracks()),false;">{{tr "btn_play"}}</button>
+					<button type="button" class="edit-btn" onclick="return editTrack(selectedTracks()),false">{{tr "btn_edit"}}</button>
+					<button type="button" class="delete-btn btn-danger" onclick="return deleteTrack(selectedTracks()),false">{{tr "btn_delete"}}</button>
+					<button type="button" id="multi-unselect" onclick="unselectTracks(); return false;">{{tr "music_deselect"}}</button>
 				</div>
-				<a id="multi-unselect" tabindex=0 title='{{tr "music_deselect"}}' onclick="unselectTracks(); return false;">✖︎</a>
 			</div>
-			<div id="player-inner">
-				<div id="other-controls">
-					<a title='{{tr "player_edit"}}' class="edit-btn" tabindex=0 onclick="return editTrack(currentTrack()),false">📝</a>
-					<a title='{{tr "player_delete"}}' class="delete-btn" tabindex=0 onclick="return deleteTrack(),false">🗑️</a>
+			<section id="lyrics-panel" hidden aria-labelledby="lyrics-title"
+				data-idle='{{tr "lyrics_idle"}}' data-loading='{{tr "lyrics_loading"}}' data-none='{{tr "lyrics_none"}}'
+				data-failed='{{tr "lyrics_failed"}}' data-instrumental='{{tr "lyrics_instrumental"}}'
+				data-file='{{tr "lyrics_from_file"}}' data-lrclib='{{tr "lyrics_from_lrclib"}}'>
+				<div class="lyrics-head">
+					<div><h2 id="lyrics-title">{{tr "lyrics_title"}}</h2><span class="lyrics-source"></span></div>
+					<button type="button" class="ib" aria-label='{{tr "lyrics_close"}}' onclick="return toggleLyrics(false),false;">{{render "_icon" "close"}}</button>
 				</div>
-				<figure>
+				<div class="lyrics-body">
+					<p class="lyrics-message" role="status"></p>
+					<ol class="lyrics-lines"></ol>
+					<p class="lyrics-settings" hidden>{{tr "lyrics_turn_on"}} <a href="/settings">{{tr "nav_settings"}}</a>.</p>
+				</div>
+			</section>
+			<div id="player-inner">
+				<figure class="now">
+					<img class="player-cover" alt="" hidden>
 					<figcaption class="player-title" onclick="return scrollToTrack(currentTrack()),false;">&nbsp;</figcaption>
-					<audio controls></audio>
+					<audio></audio>
 				</figure>
-				<div id="player-controls">
-					<a title='{{tr "player_prev"}}' class="next-btn" tabindex=0 onclick="return playTrack(prevTrack(), true),false;">⏮️</a> 
-					<a title='{{tr "player_play"}}' class="play-btn" tabindex=0 onclick="return playTrack(currentTrack()),false;">▶️</a> 
-					<a title='{{tr "player_pause"}}' class="pause-btn" tabindex=0 onclick="return pauseTrack(currentTrack()),false;">⏸️</a> 
-					<a title='{{tr "player_next"}}' class="prev-btn" tabindex=0 onclick="return playTrack(nextTrack(), true),false;">⏭️</a>
-					<a title='{{tr "player_repeat"}}' class="repeat-btn play-mode-btn" tabindex=0 onclick="return setMode('repeat-one'),false;">🔁</a> <!--  --> 
-					<a title='{{tr "player_repeat-one"}}' class="repeat-one-btn play-mode-btn" tabindex=0 onclick="return setMode('normal'),false;">🔂</a>
-					<a title='{{tr "player_normal"}}' class="normal-btn play-mode-btn" tabindex=0 onclick="return setMode('repeat'),false;">🔁</a>
-					<a title='{{tr "player_shuffle"}}' class="shuffle-btn" tabindex=0 onclick="return toggleShuffle(),false;">🔀</a>
-					<a title='{{tr "player_download"}}' class="download-btn" tabindex=0 target="_blank" download>⤵️</a>
+				<div class="transport">
+					<div class="transport-row">
+						<button type="button" class="ib shuffle-btn" aria-label='{{tr "player_shuffle"}}' aria-pressed="false" onclick="return toggleShuffle(),false;">{{render "_icon" "shuffle"}}</button>
+						<button type="button" class="ib prev-btn" aria-label='{{tr "player_prev"}}' onclick="return playTrack(prevTrack(), true),false;">{{render "_icon" "prev"}}</button>
+						<button type="button" class="ib big play-btn" aria-label='{{tr "player_play"}}' onclick="return playTrack(currentTrack()),false;">{{render "_icon" "play"}}</button>
+						<button type="button" class="ib big pause-btn" aria-label='{{tr "player_pause"}}' onclick="return pauseTrack(currentTrack()),false;">{{render "_icon" "pause"}}</button>
+						<button type="button" class="ib next-btn" aria-label='{{tr "player_next"}}' onclick="return playTrack(nextTrack(), true),false;">{{render "_icon" "next"}}</button>
+						<button type="button" class="ib repeat-btn play-mode-btn" aria-label='{{tr "btn_repeat_all"}}' onclick="return setMode('repeat-one'),false;">{{render "_icon" "repeat"}}</button>
+						<button type="button" class="ib repeat-one-btn play-mode-btn" aria-label='{{tr "btn_repeat_one"}}' onclick="return setMode('normal'),false;">{{render "_icon" "repeat-one"}}</button>
+						<button type="button" class="ib normal-btn play-mode-btn" aria-label='{{tr "btn_repeat_off"}}' onclick="return setMode('repeat'),false;">{{render "_icon" "repeat"}}</button>
+					</div>
+					<div class="seek figures">
+						<span class="time-cur">0:00</span>
+						<input class="seek-bar" type="range" min="0" max="1" step="any" value="0" aria-label='{{tr "player_position"}}'>
+						<span class="time-dur">0:00</span>
+					</div>
+				</div>
+				<div class="tools">
+					<button type="button" class="ib lyrics-btn" aria-label='{{tr "lyrics_title"}}' aria-expanded="false" aria-controls="lyrics-panel" onclick="return toggleLyrics(),false;">{{render "_icon" "lyrics"}}</button>
+					<a class="ib download-btn" aria-label='{{tr "player_download"}}' target="_blank" download>{{render "_icon" "download"}}</a>
+					<button type="button" class="ib edit-btn" aria-label='{{tr "player_edit"}}' onclick="return editTrack(currentTrack()),false">{{render "_icon" "edit"}}</button>
+					<button type="button" class="ib delete-btn" aria-label='{{tr "player_delete"}}' onclick="return deleteTrack(),false">{{render "_icon" "delete"}}</button>
+					{{render "_icon" "volume"}}
+					<input class="volume-bar" type="range" min="0" max="1" step="0.01" value="1" aria-label='{{tr "player_volume"}}'>
 				</div>
 			</div>
 		</div>

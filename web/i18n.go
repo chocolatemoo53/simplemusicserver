@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/BurntSushi/toml"
-	"github.com/kardianos/osext"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/text/language"
 )
@@ -14,16 +13,14 @@ var translations *i18n.Bundle
 var defaultLocalizer *i18n.Localizer
 
 func loadTranslations() {
-	here, err := osext.ExecutableFolder()
+	assets, err := assetsDir()
 	if err != nil {
 		panic(err)
 	}
 	translations = i18n.NewBundle(language.English)
 	translations.RegisterUnmarshalFunc("toml", toml.Unmarshal)
-	// TODO: walk text directory
-	translations.MustLoadMessageFile(filepath.Join(here, "assets", "text", "en.toml"))
-	// translations.MustLoadMessageFile(filepath.Join(here, "assets", "text", "ja.toml"))
-	defaultLocalizer = i18n.NewLocalizer(translations, language.Japanese.String())
+	translations.MustLoadMessageFile(filepath.Join(assets, "text", "en.toml"))
+	defaultLocalizer = i18n.NewLocalizer(translations, language.English.String())
 }
 
 func translateFunc(localizer *i18n.Localizer) interface{} {

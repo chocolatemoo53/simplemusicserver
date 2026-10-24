@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+	<head>
+		{{render "_head" $}}
+		<title>{{tr "titleprefix"}}admin: {{$.Target.Email}}</title>
+		<style>
+			table.admin {
+				border-spacing: 0;
+			}
+			table.admin td, table.admin th {
+				padding: 0.2em 0.75em 0.2em 0;
+				text-align: left;
+			}
+			section {
+				margin-bottom: 1.5em;
+			}
+		</style>
+	</head>
+	<body>
+		{{render "_nav" $}}
+		<main>
+			<p><a href="/admin/">Back to all users</a></p>
+			<h2>{{$.Target.Email}}</h2>
+			{{with $.Notice}}<p><b>{{. | ucfirst}}</b></p>{{end}}
+			<p class="error-msg">{{$.ErrorMsg | ucfirst}}</p>
+
+			<section>
+				<table class="admin">
+					<tr><td>ID:</td><td>{{$.Target.ID}}</td></tr>
+					<tr><td>State:</td><td>{{state $.Target}}{{if $.Target.Exempt}} (exempt){{end}}</td></tr>
+					<tr><td>Usage:</td><td>{{$.Target.Usage | bytesize}} in {{$.Target.Tracks}} tracks</td></tr>
+					<tr><td>Balance:</td><td>{{$.Target.Balance}}</td></tr>
+					<tr><td>Monthly cost:</td><td>{{$.Target.MonthlyCost}}</td></tr>
+					{{with paiduntil $.Target}}<tr><td>Lasts until:</td><td>{{. | date}}</td></tr>{{end}}
+					{{if (not $.Target.LapsedAt.IsZero)}}<tr><td>Balance ran out:</td><td>{{$.Target.LapsedAt | timestamp}}</td></tr>{{end}}
+					<tr><td>Registered:</td><td>{{$.Target.Regdate | timestamp}}</td></tr>
+					<tr><td>Last active:</td><td>{{$.Target.LastMod | timestamp}}</td></tr>
+				</table>
+			</section>
+
+			<section>
+				<h3>Add credit</h3>
+				<form action="/admin/user/{{$.Target.ID}}/credit" method="POST">
+					<label><input type="radio" name="kind" value="payment" {{if manualpay}}checked{{end}}> Payment received</label>
+					<label><input type="radio" name="kind" value="gift" {{if not manualpay}}checked{{end}}> Gift</label>
+					<br>
+					<label for="amount">Amount (USD):</label>
+					<input type="text" inputmode="decimal" id="amount" name="amount" size="8" required>
+					<label for="note">Note:</label>
+					<input type="text" id="note" name="note" maxlength="200" placeholder="E.g. Monero transaction ID, or outage compensation">
+					<input type="submit" value="Add credit">
+				</form>
+				<p><small>Payments show as "Payment" in the user's history, gifts as "Credit". Neither can be refunded automatically through BTCPay; refund a manual payment by hand.</small></p>
+			</section>
+
+			<section>
+				<h3>Exempt</h3>
+				<p>Exempt accounts store any amount for free and are never charged or locked.</p>
+				<form action="/admin/user/{{$.Target.ID}}/exempt" method="POST">
+					{{if $.Target.Exempt}}
+						<input type="hidden" name="exempt" value="0">
+						<input type="submit" value="Remove exemption">
+					{{else}}
+						<input type="hidden" name="exempt" value="1">
+						<input type="submit" value="Make exempt">
+					{{end}}
+				</form>
+			</section>
+
+			{{if $.Ledger}}
+			<section>
+				<h3>History</h3>
+				<table class="admin">
+					{{range $.Ledger}}
+						<tr>
+							<td>{{.At | timestamp}}</td>
+							<td>{{.Kind}}</td>
+							<td>{{.Amount}}</td>
+							<td>{{.Ref}}</td>
+							<td>{{.Note}}</td>
+						</tr>
+					{{end}}
+				</table>
+			</section>
+			{{end}}
+
+			{{if $.Refunds}}
+			<section>
+				<h3>Refunds</h3>
+				<table class="admin">
+					{{range $.Refunds}}
+						<tr>
+							<td>Refund {{.ID}}</td>
+							<td>{{.At | timestamp}}</td>
+							<td>{{.Amount}}</td>
+							<td>{{.Status}}</td>
+							<td>{{.InvoiceID}}</td>
+						</tr>
+					{{end}}
+				</table>
+			</section>
+			{{end}}
+
+			<section>
+				<h3 class="error-msg">Delete account</h3>
+				{{if $.IsSelf}}
+					<p>This is your own account, so it can't be deleted from here.</p>
+				{{else}}
+					<p>Permanently deletes this account, its playlists and every uploaded file. this can't be undone. any balance they have is <b>not</b> refunded automatically.</p>
+					<form action="/admin/user/{{$.Target.ID}}/delete" method="POST">
+						<label for="confirm">Type <b>{{$.Target.Email}}</b> to confirm:</label>
+						<input type="text" id="confirm" name="confirm" autocomplete="off" required>
+						<input type="submit" value="Delete account">
+					</form>
+				{{end}}
+			</section>
+		</main>
+	</body>
+</html>

@@ -3,17 +3,15 @@ package tube
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
-	"log"
 	"path"
 	"sort"
 	"strings"
-	"sync"
 	"time"
-	"unicode/utf8"
-
-	"github.com/guregu/dynamo"
 )
 
 const (
@@ -23,15 +21,13 @@ const (
 )
 
 type Track struct {
-	UserID int       `dynamo:",hash" index:"UserID-SortID-index,hash" index:"UserID-Date-index,hash"`
-	ID     string    `dynamo:",range"`
-	SortID string    `index:"UserID-SortID-index,range" badgerhold:"index"`
-	Date   time.Time `index:"UserID-Date-index,range"`
+	UserID int
+	ID     string
+	SortID string
+	Date   time.Time
 
-	// proper case:
 	Info TrackInfo
 
-	// should be lowercase:
 	Title       string
 	Artist      string
 	Album       string
@@ -45,36 +41,33 @@ type Track struct {
 	Disc    int
 	Discs   int
 	Year    int
-	Picture Picture  `dynamo:",omitempty"`
-	Tags    []string `dynamo:",set"` // user-defined tags
+	Picture Picture
+	Tags    []string
 
 	Filename string
 	Filetype string
 	UploadID string
 	Size     int
-	Duration int // seconds
+	Duration int
 
 	TagFormat string
-	Metadata  map[string]interface{} // IDv3 tags
+	Lyrics    *Lyrics `json:",omitempty"`
 
 	LastMod  time.Time
-	LocalMod int64 // lastMod from client at upload time
+	LocalMod int64
 	Dirty    bool
 
 	Plays      int
 	LastPlayed time.Time
-	Resume     float64   // seconds
-	ResumeMod  time.Time `dynamo:",omitempty"`
+	Resume     float64
+	ResumeMod  time.Time
 
-	Deleted bool
+	ContentHash string
+	FileKey     []byte
 
-	// view only
-	Starred time.Time `dynamo:"-"`
-	DL      string    `dynamo:"-" json:",omitempty"`
-}
-
-func (Track) CreateTable(create *dynamo.CreateTable) {
-	create.Stream(dynamo.NewAndOldImagesView)
+	Object  string    `json:"-"`
+	Starred time.Time `json:"-"`
+	DL      string    `json:",omitempty"`
 }
 
 type TrackInfo struct {
@@ -88,27 +81,14 @@ type TrackInfo struct {
 }
 
 func (ti *TrackInfo) Sanitize() {
-	if !utf8.ValidString(ti.Title) {
-		ti.Title = strings.ToValidUTF8(ti.Title, "�")
-	}
-	if !utf8.ValidString(ti.Artist) {
-		ti.Artist = strings.ToValidUTF8(ti.Artist, "�")
-	}
-	if !utf8.ValidString(ti.Album) {
-		ti.Album = strings.ToValidUTF8(ti.Album, "�")
-	}
-	if !utf8.ValidString(ti.AlbumArtist) {
-		ti.AlbumArtist = strings.ToValidUTF8(ti.AlbumArtist, "�")
-	}
-	if !utf8.ValidString(ti.Composer) {
-		ti.Composer = strings.ToValidUTF8(ti.Composer, "�")
-	}
-	if !utf8.ValidString(ti.Genre) {
-		ti.Genre = strings.ToValidUTF8(ti.Genre, "�")
-	}
-	if !utf8.ValidString(ti.Comment) {
-		ti.Comment = strings.ToValidUTF8(ti.Comment, "�")
-	}
+	const replacement = "\ufffd"
+	ti.Title = strings.ToValidUTF8(ti.Title, replacement)
+	ti.Artist = strings.ToValidUTF8(ti.Artist, replacement)
+	ti.Album = strings.ToValidUTF8(ti.Album, replacement)
+	ti.AlbumArtist = strings.ToValidUTF8(ti.AlbumArtist, replacement)
+	ti.Composer = strings.ToValidUTF8(ti.Composer, replacement)
+	ti.Genre = strings.ToValidUTF8(ti.Genre, replacement)
+	ti.Comment = strings.ToValidUTF8(ti.Comment, replacement)
 }
 
 func (t TrackInfo) AnyArtist() string {
@@ -135,83 +115,210 @@ func (t *Track) ApplyInfo(info TrackInfo) {
 	t.Comment = strings.ToLower(info.Comment)
 }
 
-func (t *Track) Create(ctx context.Context) error {
-	t.Date = time.Now().UTC()
-	t.SortID = t.SortKey()
+var ErrLocked = errors.New("library is locked")
 
-	tracks := dynamoTable("Tracks")
-	var old Track
-	err := tracks.Put(t).OldValue(&old)
-	if err == ErrNotFound {
-		// new file, so inc usage
-		_, err := AddUsage(ctx, t.UserID, int64(t.Size), 1)
+func trackAD(userID int, id string) string {
+	return fmt.Sprintf("tracks:%d:%s", userID, id)
+}
+
+func (u User) TrackID(contentHash string) string {
+	return u.keys.ID("track", contentHash)
+}
+
+func NewObjectKey(userID int) string {
+	return fmt.Sprintf("u/%d/%s", userID, hex.EncodeToString(randomBytes(16)))
+}
+
+func (u User) sealTrack(t Track) ([]byte, error) {
+	if u.keys == nil {
+		return nil, ErrLocked
+	}
+	t.Starred = time.Time{}
+	t.DL = ""
+	return u.keys.SealJSON(t, trackAD(u.ID, t.ID))
+}
+
+func (u User) openTrack(id, object string, data []byte) (Track, error) {
+	if u.keys == nil {
+		return Track{}, ErrLocked
+	}
+	var t Track
+	if err := u.keys.OpenJSON(data, trackAD(u.ID, id), &t); err != nil {
+		return Track{}, err
+	}
+	t.UserID, t.ID, t.Object = u.ID, id, object
+	t.SortID = t.SortKey()
+	return t, nil
+}
+
+func (u User) saveTrack(ctx context.Context, q querier, t Track) error {
+	data, err := u.sealTrack(t)
+	if err != nil {
 		return err
 	}
+	_, err = q.ExecContext(ctx,
+		`INSERT INTO tracks (user_id, id, object, size, data) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (user_id, id) DO UPDATE SET object = excluded.object, size = excluded.size, data = excluded.data`,
+		u.ID, t.ID, t.Object, t.Size, data)
 	return err
 }
 
-func (t *Track) Save(ctx context.Context) error {
-	t.SortID = t.SortKey()
-
-	tracks := dynamoTable("Tracks")
-	return tracks.Put(t).Run()
+func (u User) getTrack(ctx context.Context, q querier, id string) (Track, error) {
+	var (
+		object string
+		data   []byte
+	)
+	err := q.QueryRowContext(ctx, `SELECT object, data FROM tracks WHERE user_id = ? AND id = ?`, u.ID, id).Scan(&object, &data)
+	if err != nil {
+		return Track{}, notFound(err)
+	}
+	return u.openTrack(id, object, data)
 }
 
-func (t *Track) Delete(ctx context.Context) error {
-	size := t.Size
-	if size == 0 {
-		f, err := GetFile(ctx, t.UploadID)
+func (u User) queryTracks(ctx context.Context, query string, args ...any) (Tracks, error) {
+	if u.keys == nil {
+		return nil, ErrLocked
+	}
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tracks Tracks
+	for rows.Next() {
+		var (
+			id, object string
+			data       []byte
+		)
+		if err := rows.Scan(&id, &object, &data); err != nil {
+			return nil, err
+		}
+		t, err := u.openTrack(id, object, data)
+		if err != nil {
+			return nil, err
+		}
+		tracks = append(tracks, t)
+	}
+	return tracks, rows.Err()
+}
+
+func (u User) CreateTrack(ctx context.Context, t *Track) error {
+	t.UserID = u.ID
+	t.Date = time.Now().UTC()
+	t.SortID = t.SortKey()
+	return inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := u.getTrack(ctx, tx, t.ID); err == nil {
+			return fmt.Errorf("track already exists: %s", t.ID)
+		} else if err != ErrNotFound {
+			return err
+		}
+		if err := u.saveTrack(ctx, tx, *t); err != nil {
+			return err
+		}
+		if err := recordObject(ctx, tx, u.ID, t.Object, ObjectTrack, int64(t.Size)); err != nil {
+			return err
+		}
+		_, err := updateUserTx(ctx, tx, u.ID, addUsage(int64(t.Size), 1))
+		return err
+	})
+}
+
+func (u User) SaveTrack(ctx context.Context, t *Track) error {
+	t.SortID = t.SortKey()
+	return u.saveTrack(ctx, db, *t)
+}
+
+func (u User) UpdateTrack(ctx context.Context, id string, fn func(*Track) error) (Track, error) {
+	var updated Track
+	err := inTx(ctx, func(tx *sql.Tx) error {
+		t, err := u.getTrack(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		size = int(f.Size)
-	}
+		if err := fn(&t); err != nil {
+			return err
+		}
+		t.SortID = t.SortKey()
+		updated = t
+		return u.saveTrack(ctx, tx, t)
+	})
+	return updated, err
+}
 
-	tracks := dynamoTable("Tracks")
-	if err := tracks.Delete("UserID", t.UserID).Range("ID", t.ID).Run(); err != nil {
+func (u User) IncPlays(ctx context.Context, id string) (Track, error) {
+	return u.UpdateTrack(ctx, id, func(t *Track) error {
+		t.Plays++
+		t.LastPlayed = time.Now().UTC()
+		return nil
+	})
+}
+
+func (u User) SetResume(ctx context.Context, id string, secs float64, modTime time.Time) (Track, error) {
+	return u.UpdateTrack(ctx, id, func(t *Track) error {
+		if t.ResumeMod.After(modTime) {
+			return ErrConflict
+		}
+		t.Resume = secs
+		t.ResumeMod = modTime
+		return nil
+	})
+}
+
+func (u User) SetDuration(ctx context.Context, id string, secs int) (Track, error) {
+	return u.UpdateTrack(ctx, id, func(t *Track) error {
+		if t.Duration > secs {
+			return ErrConflict
+		}
+		t.Duration = secs
+		return nil
+	})
+}
+
+type StoredTrack struct {
+	ID     string
+	Object string
+	Size   int64
+}
+
+func TrackObjects(ctx context.Context, userID int) ([]StoredTrack, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, object, size FROM tracks WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []StoredTrack
+	for rows.Next() {
+		var st StoredTrack
+		if err := rows.Scan(&st.ID, &st.Object, &st.Size); err != nil {
+			return nil, err
+		}
+		list = append(list, st)
+	}
+	return list, rows.Err()
+}
+
+func RemoveTrack(ctx context.Context, userID int, id string) (string, error) {
+	var object string
+	err := inTx(ctx, func(tx *sql.Tx) error {
+		var size int64
+		err := tx.QueryRowContext(ctx, `SELECT object, size FROM tracks WHERE user_id = ? AND id = ?`, userID, id).Scan(&object, &size)
+		if err != nil {
+			return notFound(err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tracks WHERE user_id = ? AND id = ?`, userID, id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM objects WHERE key = ?`, object); err != nil {
+			return err
+		}
+		_, err = updateUserTx(ctx, tx, userID, addUsage(-size, -1))
 		return err
-	}
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", t.UserID).
-		Add("Usage", -size).
-		Add("Tracks", -1).
-		Run()
-}
-
-func (t *Track) IncPlays(ctx context.Context) error {
-	tracks := dynamoTable("Tracks")
-	return tracks.Update("UserID", t.UserID).Range("ID", t.ID).
-		Add("Plays", 1).
-		Set("LastPlayed", time.Now().UTC()).
-		Value(t)
-}
-
-func (t *Track) SetResume(ctx context.Context, secs float64, modTime time.Time) error {
-	tracks := dynamoTable("Tracks")
-	return tracks.Update("UserID", t.UserID).Range("ID", t.ID).
-		Set("Resume", secs).
-		Set("ResumeMod", modTime).
-		If("attribute_not_exists('ResumeMod') OR 'ResumeMod' <= ?", modTime).
-		Value(t)
-}
-
-func (t *Track) SetDuration(ctx context.Context, secs int) error {
-	tracks := dynamoTable("Tracks")
-	return tracks.Update("UserID", t.UserID).Range("ID", t.ID).
-		Set("Duration", secs).
-		If("attribute_not_exists('Duration') OR 'Duration' <= ?", secs).
-		Value(t)
-}
-
-func (t *Track) RefreshSortID(ctx context.Context) error {
-	tracks := dynamoTable("Tracks")
-	return tracks.Update("UserID", t.UserID).Range("ID", t.ID).
-		Set("SortID", t.SortKey()).
-		Value(t)
+	})
+	return object, err
 }
 
 func (t Track) StorageKey() string {
-	return fmt.Sprintf("u/tracks/%d/%s%s", t.UserID, t.ID, path.Ext(t.Filename))
+	return t.Object
 }
 
 func (t Track) SortKey() string {
@@ -246,7 +353,6 @@ func (t Track) FileURL() string {
 	return fmt.Sprintf("/dl/tracks/%s%s", t.ID, path.Ext(t.Filename))
 }
 
-// VirtualPath returns an ideal path as synchronized to a filesystem
 func (t Track) VirtualPath() string {
 	scrub := func(name string) string {
 		name = strings.ReplaceAll(name, "/", "-")
@@ -257,7 +363,7 @@ func (t Track) VirtualPath() string {
 		for _, chr := range cutset {
 			name = strings.ReplaceAll(name, string(chr), "")
 		}
-		return name
+		return strings.Trim(name, " .")
 	}
 	artist := t.Info.AlbumArtist
 	if artist == "" {
@@ -267,7 +373,10 @@ func (t Track) VirtualPath() string {
 			artist = "Unknown Artist"
 		}
 	}
-	album := t.Info.Album
+	if artist = scrub(artist); artist == "" {
+		artist = "Unknown Artist"
+	}
+	album := scrub(t.Info.Album)
 	if album == "" {
 		album = "Unknown Album"
 	}
@@ -286,6 +395,9 @@ func (t Track) VirtualPath() string {
 		num = fmt.Sprintf("%02d ", t.Number)
 	}
 	filename := scrub(num + title + t.Ext())
+	if filename == "" || filename == t.Ext() {
+		filename = "Untitled" + t.Ext()
+	}
 	return path.Join(artist, album, filename)
 }
 
@@ -305,7 +417,6 @@ func (t Track) MIMEType() string {
 	case "M4A":
 		return "audio/mp4"
 	}
-	// return "binary/octet-stream"
 	return ""
 }
 
@@ -354,10 +465,6 @@ func (t Track) AnyArtist() string {
 	return ""
 }
 
-// func (t Track) AlbumCode() string {
-// return base64.RawURLEncoding.EncodeToString([]byte(t.AnyArtist() + " " + t.Album))
-// }
-
 func (t Track) AlbumCode() string {
 	artist := t.AnyArtist()
 	b := make([]byte, 0, len(artist)+1+len(t.Album))
@@ -369,12 +476,10 @@ func (t Track) AlbumCode() string {
 }
 
 func (t Track) ArtistSSID() SSID {
-	// TODO: fix
 	return NewSSID(SSIDArtist, t.AnyArtist())
 }
 
 func (t Track) AlbumSSID() SSID {
-	// TODO: fix
 	return NewSSID(SSIDAlbum, t.AlbumCode())
 }
 
@@ -383,8 +488,6 @@ func (t Track) TrackSSID() SSID {
 }
 
 func (t Track) MatchesSSID(ssid SSID) bool {
-	// TODO fix
-	// ssid := ParseSSID(id)
 	switch ssid.Kind {
 	default:
 		fallthrough
@@ -395,239 +498,106 @@ func (t Track) MatchesSSID(ssid SSID) bool {
 	case SSIDArtist:
 		return t.ArtistSSID() == ssid
 	case SSIDFolder:
-		return ssid == MusicFolder // TODO: other folders?
+		return ssid == MusicFolder
 	}
 }
 
-// TODO: improve
 func (t Track) Bitrate() int {
 	if t.Duration == 0 {
 		return 320
 	}
-	//           const bitrate = Math.floor((file.size * 0.008) / duration);
 	guess := float64(t.Size) * 0.008 / float64(t.Duration)
 	return int(guess)
 }
 
-func (t Track) Env() map[string]interface{} {
-	/*
-			type TrackInfo struct {
-			Title       string
-			Artist      string
-			Album       string
-			AlbumArtist string
-			Composer    string
-			Genre       string
-			Comment     string
-		}
-	*/
-	/*
-			Number  int
-		Total   int
-		Disc    int
-		Discs   int
-		Year    int
-		Picture Picture  `dynamo:",omitempty"`
-		Tags    []string `dynamo:",set"` // user-defined tags
-
-		Filename string
-		Filetype string
-		UploadID string
-		Size     int
-		Duration int // seconds
-
-		TagFormat string
-		Metadata  map[string]interface{} // IDv3 tags
-
-		LastMod  time.Time
-		LocalMod int64 // lastMod from client at upload time
-		Dirty    bool
-
-		Plays      int
-		LastPlayed time.Time
-		Resume     float64   // seconds
-		ResumeMod  time.Time `dynamo:",omitempty"`
-	*/
-	return map[string]interface{}{
-		"id":         t.ID,
-		"ssid":       t.TrackSSID(),
-		"artistssid": t.ArtistSSID(),
-
-		"number": t.Number,
-		"total":  t.Total,
-		"disc":   t.Disc,
-		"discs":  t.Discs,
-		"year":   t.Year,
-
-		"filename": t.Filename,
-		"filetype": t.Filetype,
-		"size":     t.Size,
-		"duration": t.Duration,
-
-		"plays":    t.Plays,
-		"lastplay": t.LastPlayed,
-		"resume":   t.Resume,
-		// "resumemod": t.ResumeMod,
-
-		"title":       t.Info.Title,
-		"artist":      t.Info.Artist,
-		"album":       t.Info.Album,
-		"albumartist": t.Info.AlbumArtist,
-		"composer":    t.Info.Composer,
-		"genre":       t.Info.Genre,
-		"comment":     t.Info.Comment,
-	}
-}
-
 type Picture struct {
-	ID   string
-	Type string
-	Ext  string
-	Desc string
+	ID     string
+	Type   string
+	Ext    string
+	Desc   string
+	Object string
+	Size   int64
 }
 
 func (p Picture) StorageKey() string {
-	return fmt.Sprintf("pic/%s.%s", p.ID, p.Ext)
+	return p.Object
+}
+
+func (p Picture) URL() string {
+	if p.ID == "" {
+		return ""
+	}
+	return "/pic/" + p.ID
 }
 
 func (u User) GetTracks(ctx context.Context) (Tracks, error) {
-	if useDump {
-		if d, err := u.GetDump(); err == nil {
-			log.Println("using dump for", u.ID, "@", d.Time, d.Key())
-			return d.Tracks, nil
-		}
-	}
-	tracks, _, err := GetTracksPartialSorted(ctx, u.ID, 0, nil)
-	return tracks, err
-}
-
-func GetTracks(ctx context.Context, userID int) (Tracks, error) {
-	table := dynamoTable("Tracks")
-	var tracks Tracks
-	err := table.Get("UserID", userID).Consistent(true).All(&tracks)
-	sort.Sort(tracks)
-	return tracks, err
-}
-
-func GetTracksInfo(ctx context.Context, userID int) (Tracks, error) {
-	table := dynamoTable("Tracks")
-	var tracks []Track
-	err := table.Get("UserID", userID).Project("ID", "UserID", "Info").All(&tracks)
-	return tracks, err
-}
-
-func GetTracksPartial(ctx context.Context, userID int, limit int64, startFrom dynamo.PagingKey) (Tracks, dynamo.PagingKey, error) {
-	table := dynamoTable("Tracks")
-	var tracks Tracks
-	q := table.Get("UserID", userID)
-	if limit > 0 {
-		q.SearchLimit(limit)
-	}
-	if startFrom != nil {
-		q.StartFrom(startFrom)
-	}
-	next, err := q.AllWithLastEvaluatedKey(&tracks)
-	return tracks, next, err
-}
-
-func GetTracksPartialSorted(ctx context.Context, userID int, limit int64, startFrom dynamo.PagingKey) (Tracks, dynamo.PagingKey, error) {
-	table := dynamoTable("Tracks")
-	var tracks Tracks
-	q := table.Get("UserID", userID)
-	q.Index("UserID-SortID-index")
-	if limit > 0 {
-		q.SearchLimit(limit)
-	}
-	if startFrom != nil {
-		q.StartFrom(startFrom)
-	}
-	next, err := q.AllWithLastEvaluatedKey(&tracks)
-	return tracks, next, err
-}
-
-func GetTracksBatch(ctx context.Context, userID int, trackIDs []string) (Tracks, error) {
-	table := dynamoTable("Tracks")
-	batch := table.Batch("UserID", "ID").Get()
-	for _, id := range trackIDs {
-		batch.And(dynamo.Keys{userID, id})
-	}
-	var tracks Tracks
-	err := batch.All(&tracks)
-	return tracks, err
-}
-
-func GetTrack(ctx context.Context, userID int, trackID string) (Track, error) {
-	table := dynamoTable("Tracks")
-	var track Track
-	err := table.Get("UserID", userID).Range("ID", dynamo.Equal, trackID).One(&track)
-	return track, err
-}
-
-func GetALLTracks(ctx context.Context) dynamo.Iter {
-	table := dynamoTable("Tracks")
-	return table.Scan().Iter()
-}
-
-func CountTracks(ctx context.Context, userID int) (int64, error) {
-	table := dynamoTable("Tracks")
-	ct, err := table.Get("UserID", userID).Count()
-	return ct, err
-}
-
-func CountTracks2(ctx context.Context, userID int) (int64, error) {
-	table := dynamoTable("Tracks")
-	ct, err := table.Get("UserID", userID).Index("UserID-SortID-index").Count()
-	return ct, err
-}
-
-func MassUpdateTracks(ctx context.Context, userID int, trackIDs []string, mutator func(*dynamo.Update)) error {
-	// TODO: rewrite
-	table := dynamoTable("Tracks")
-
-	var wg sync.WaitGroup
-	for _, id := range trackIDs {
-		id := id
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			u := table.Update("UserID", userID).Range("ID", id)
-			mutator(u)
-			u.If("attribute_exists('ID')")
-			var t Track
-			if err := u.Value(&t); err != nil {
-				fmt.Println("mass err:", err)
-				return
-			}
-			if err := t.RefreshSortID(ctx); err != nil {
-				fmt.Println("mass sid err:", err)
-				return
-			}
-		}()
-	}
-	wg.Wait()
-	return nil
-}
-
-func DeleteTrack(ctx context.Context, userID int, trackID string) error {
-	track, err := GetTrack(ctx, userID, trackID)
+	tracks, err := u.queryTracks(ctx, `SELECT id, object, data FROM tracks WHERE user_id = ?`, u.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return track.Delete(ctx)
+	sort.Sort(tracks)
+	return tracks, nil
+}
+
+func (u User) GetTracksPartial(ctx context.Context, limit int, after string) (tracks Tracks, next string, err error) {
+	tracks, err = u.queryTracks(ctx,
+		`SELECT id, object, data FROM tracks WHERE user_id = ? AND id > ? ORDER BY id LIMIT ?`,
+		u.ID, after, limit)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(tracks) == limit {
+		next = tracks[len(tracks)-1].ID
+	}
+	return tracks, next, nil
+}
+
+func (u User) GetTracksBatch(ctx context.Context, trackIDs []string) (Tracks, error) {
+	if len(trackIDs) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(trackIDs)+1)
+	args = append(args, u.ID)
+	for _, id := range trackIDs {
+		args = append(args, id)
+	}
+	return u.queryTracks(ctx,
+		`SELECT id, object, data FROM tracks WHERE user_id = ? AND id IN (`+placeholders(len(trackIDs))+`)`,
+		args...)
+}
+
+func (u User) GetTrack(ctx context.Context, trackID string) (Track, error) {
+	return u.getTrack(ctx, db, trackID)
+}
+
+func (u User) MassUpdateTracks(ctx context.Context, trackIDs []string, mutate func(*Track)) error {
+	return inTx(ctx, func(tx *sql.Tx) error {
+		for _, id := range trackIDs {
+			t, err := u.getTrack(ctx, tx, id)
+			if err == ErrNotFound {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			mutate(&t)
+			t.SortID = t.SortKey()
+			if err := u.saveTrack(ctx, tx, t); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func IncTotalPlays(ctx context.Context, secs int) error {
-	_, err := NextID(ctx, "TotalPlays")
-	if err != nil {
+	if err := incCounter(ctx, "TotalPlays", 1); err != nil {
 		return err
 	}
 	if secs <= 0 {
 		return nil
 	}
-	table := dynamoTable("Counters")
-	return table.Update("ID", "TotalTime").
-		Add("Count", secs).
-		Run()
+	return incCounter(ctx, "TotalTime", secs)
 }
 
 type Tracks []Track

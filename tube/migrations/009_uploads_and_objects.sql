@@ -1,0 +1,20 @@
+DROP TABLE files;
+
+CREATE TABLE files (
+	id TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	created INTEGER NOT NULL,
+	data BLOB NOT NULL
+) WITHOUT ROWID;
+
+CREATE INDEX files_created ON files (created);
+
+CREATE TABLE objects (
+	key TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	kind TEXT NOT NULL,
+	size INTEGER NOT NULL,
+	created INTEGER NOT NULL
+) WITHOUT ROWID;
+
+CREATE INDEX objects_user ON objects (user_id);

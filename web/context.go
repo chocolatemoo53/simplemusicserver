@@ -15,6 +15,16 @@ type langkey struct{}
 type userkey struct{}
 type pathkey struct{}
 type bypasskey struct{}
+type sessionkey struct{}
+
+func withSession(ctx context.Context, sesh tube.Session) context.Context {
+	return context.WithValue(ctx, sessionkey{}, sesh)
+}
+
+func sessionFrom(ctx context.Context) (tube.Session, bool) {
+	sesh, ok := ctx.Value(sessionkey{}).(tube.Session)
+	return sesh, ok
+}
 
 func discover(ctx context.Context, w http.ResponseWriter, r *http.Request) context.Context {
 	acceptlang := r.Header.Get("Accept-Language")
@@ -27,12 +37,6 @@ func discover(ctx context.Context, w http.ResponseWriter, r *http.Request) conte
 
 func cacheHeaders(ctx context.Context, w http.ResponseWriter, r *http.Request) context.Context {
 	w.Header().Set("Cache-Control", "no-cache, max-age=0, must-revalidate")
-	// w.Header().Set("Cache-Control", "no-cache, must-revalidate")
-
-	// if DebugMode {
-	// 	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
-	// 	return ctx
-	// }
 
 	if u, ok := userFrom(ctx); ok && !u.LastMod.IsZero() {
 		lm := lastestMod(u.LastMod)
@@ -74,7 +78,7 @@ func withLanguage(ctx context.Context, langs ...string) context.Context {
 func languageFrom(ctx context.Context) string {
 	lang, ok := ctx.Value(langkey{}).(string)
 	if !ok {
-		return "ja"
+		return "en"
 	}
 	return lang
 }
@@ -88,7 +92,6 @@ func userFrom(ctx context.Context) (tube.User, bool) {
 	return u, ok
 }
 
-// TODO: maybe change this to the URL obj
 func withPath(ctx context.Context, path string) context.Context {
 	return context.WithValue(ctx, pathkey{}, path)
 }

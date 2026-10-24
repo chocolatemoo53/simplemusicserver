@@ -1,7 +1,6 @@
 package web
 
 import (
-	"fmt"
 	"path"
 	"strconv"
 	"strings"
@@ -44,8 +43,6 @@ func guessMetadata(name string, ftype tag.FileType) tag.Metadata {
 		return guessedMeta{title: name, ftype: ftype}
 	}
 
-	// title + maybe track number
-	// TODO: rewrite lol
 	last := strs[len(strs)-1]
 	if lsplit := strings.Split(last, " "); len(lsplit) >= 2 {
 		maybeTrack := strings.TrimSuffix(lsplit[0], ".")
@@ -53,7 +50,6 @@ func guessMetadata(name string, ftype tag.FileType) tag.Metadata {
 			nsplit := strings.Split(maybeTrack, "-")
 			d, err1 := strconv.Atoi(nsplit[0])
 			n, err2 := strconv.Atoi(nsplit[1])
-			fmt.Println(d, err1, n, err2)
 			if err1 == nil && err2 == nil {
 				meta.disc = d
 				meta.track = n
@@ -78,10 +74,6 @@ func guessMetadata(name string, ftype tag.FileType) tag.Metadata {
 		} else {
 			meta.track = lastnum
 		}
-		// if meta.title == "" && len(nums) == 2 {
-		// 	meta.title = strconv.Itoa(lastnum)
-		// 	meta.track = nums[0]
-		// }
 	}
 
 	switch len(strs) {
@@ -96,7 +88,6 @@ func guessMetadata(name string, ftype tag.FileType) tag.Metadata {
 		meta.album = strs[1]
 		meta.artist = strs[2]
 	default:
-		// give up
 		meta.title = name
 	}
 
@@ -248,13 +239,8 @@ var id3v1to2 = map[string]string{
 	"TRK": "TRCK",
 	"TPA": "TPOS",
 	"TCO": "TCON",
-	// "PIC": "APIC",
-	// "":    "USLT",
-	// "COM": "COMM", // panics on *tag.Comm conversion
 }
 
-// unfuckID3 fixes the given metadata if it is ID3v2 format but with ID3v1 keys
-// (yes, such terrible files actually exist)
 func unfuckID3(metadata tag.Metadata) {
 	if metadata.Format() != tag.ID3v2_3 {
 		return
@@ -262,9 +248,10 @@ func unfuckID3(metadata tag.Metadata) {
 	raw := metadata.Raw()
 	for k, v := range raw {
 		if k == "PIC\u0000" {
-			pic, err := tag.ReadPICFrame(v.([]byte))
-			if err == nil {
-				raw["APIC"] = pic
+			if b, ok := v.([]byte); ok {
+				if pic, err := tag.ReadPICFrame(b); err == nil {
+					raw["APIC"] = pic
+				}
 			}
 			delete(raw, k)
 			continue

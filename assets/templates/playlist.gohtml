@@ -43,7 +43,7 @@
 					<fieldset>
 						<legend>{{tr "playlist_basics"}}</legend>
 						<div>
-							<label for="playlist-name">{{tr "playlist_name"}}:</label> <input type="text" id="playlist-name" name="playlist-name" placeholder='{{tr "playlistname"}}' required>
+							<label for="playlist-name">{{tr "playlist_name"}}:</label> <input type="text" id="playlist-name" name="playlist-name" placeholder='{{tr "playlistname"}}' value="{{$.Playlist.Name}}" required>
 						</div>
 					</fieldset>
 					
@@ -82,8 +82,9 @@
 
 				<section>
 					<div id="buttons">
-						<button onclick="return searchTracks(),false">preview</button>
-						<input type="submit" value="{{if $editing}}{{tr "edit"}}{{else}}{{tr "create"}}{{end}}">
+						<button type="button" onclick="return searchTracks(),false;">Preview</button>
+						<input type="submit" value="{{if $editing}}{{tr "update"}}{{else}}{{tr "create"}}{{end}}">
+						<a href="/music/playlists" class="btn" style="text-decoration: none; display: inline-flex; align-items: center; padding: 0 14px;">Cancel</a>
 					</div>
 				</section>
 			</form>
@@ -116,7 +117,6 @@
 					<option data-for="*" value="$1 != $2">is not</option>
 					<option data-for="int date" value="$1 < $2">less than</option>
 					<option data-for="int date" value="$1 > $2">greater than</option>
-					<!-- <option data-for="time" value="lastplay.After(now.Add(days(-$2)))">days ago</option> -->
 					<option data-for="time" value="Now() - $1 < Days($2)">days ago</option>
 				</select>
 				<input class="condition-val" type="text" placeholder="value">
@@ -126,6 +126,8 @@
 		</template>
 
 		<script>
+			var INITIAL_CONDS = {{if $.Playlist.UIMeta}}{{printf "%s" $.Playlist.UIMeta}}{{else}}null{{end}};
+
 			function addCondition() {
 				var tmpl = document.getElementById("condition-tmpl");
 				var conds = document.getElementById("conditions");
@@ -133,9 +135,29 @@
 				var node = tmpl.content.firstElementChild.cloneNode(true);
 				node = conds.insertBefore(node, btnitem);
 				rejiggerCond(node);
+				return node;
+			}
+			function loadInitialConditions() {
+				if (INITIAL_CONDS && Array.isArray(INITIAL_CONDS.Conds) && INITIAL_CONDS.Conds.length > 0) {
+					var tmpl = document.getElementById("condition-tmpl");
+					var conds = document.getElementById("conditions");
+					var btnitem = conds.querySelector(".button-item");
+					for (var i = 0; i < INITIAL_CONDS.Conds.length; i++) {
+						var c = INITIAL_CONDS.Conds[i];
+						var node = tmpl.content.firstElementChild.cloneNode(true);
+						node = conds.insertBefore(node, btnitem);
+						node.querySelector(".condition-include").value = c.inc ? "include" : "exclude";
+						node.querySelector(".condition-attr").value = c.attr;
+						rejiggerCond(node);
+						node.querySelector(".condition-op").value = c.op;
+						node.querySelector(".condition-val").value = c.val;
+					}
+					return;
+				}
+				addCondition();
 			}
 			window.addEventListener("load", function() {
-				getCache("/music", getCache.bind(window, "/music/albums", addCondition), addCondition);
+				getCache("/music", getCache.bind(window, "/music/albums", loadInitialConditions), loadInitialConditions);
 			});
 
 			function condParent(elem) {
@@ -247,33 +269,23 @@
 			}
 
 			function submitForm(evt) {
-				console.log(evt);
 				var data = {};
 				var form = evt.target;
 				data.meta = Object.fromEntries(Array.from(new FormData(form)));
 				data.form = parseForm(form);
-				console.log(data);
-				console.log(JSON.stringify(data));
 
 				var xhr = new XMLHttpRequest();
-				xhr.open("POST", ".")
+				xhr.open("POST", window.location.pathname);
 				xhr.setRequestHeader("Content-Type", "application/json");
 				xhr.onload = function () {
-					if (xhr.status == 200) {
-						// TODO: redirect
-						var loc = xhr.getResponseHeader("Location");
-						console.log("OK~!");
-						window.location = loc;
+					if (xhr.status == 200 || xhr.status == 201) {
+						window.location = "/music/playlists";
 					} else {
-						console.log(xhr.status, xhr.response);
+						alert("Error: " + xhr.response);
 					}
 				};
 				xhr.send(JSON.stringify(data));
-
 			}
-
-
-			// TODO: DONT COPYPASTE THIS
 
 			function getCache(href, otherwise, after) {
 				return window.caches.match(href).then(function(resp) {

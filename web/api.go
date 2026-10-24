@@ -1,100 +1,125 @@
 package web
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"runtime/debug"
 	"time"
-
-	"github.com/guregu/kami"
 )
 
 var (
 	Domain    = "inter.tube"
 	Deployed  time.Time
 	DebugMode = false
+	AdminIDs  []int
 )
 
 func init() {
-	kami.PanicHandler = PanicHandler
-	http.Handle("/", kami.Handler())
-
-	kami.Use("/", discover)
-	kami.Use("/", allowGuest(
-		"/login", "/register", "/forgot", "/recover",
+	use("/", discover)
+	use("/", allowGuest(
+		"/login", "/register", "/forgot", "/recover", "/verify",
 		"/terms", "/privacy", "/buy/", "/subsonic",
+		"/favicon.svg", "/apple-touch-icon.png",
 		"/api/v0/login",
-		"/external/stripe"))
-	kami.Use("/", requireLogin)
+		"/external/btcpay"))
+	use("/", allowGuestPrefix("/fonts/"))
+	use("/", requireLogin)
 
-	kami.Get("/", homepage)
-	kami.Get("/terms", termsOfService)
-	kami.Get("/privacy", privacyPolicy)
+	handle("GET /{$}", homepage)
+	handle("GET /terms", termsOfService)
+	handle("GET /privacy", privacyPolicy)
+	handle("GET /fonts/{name}", serveFont)
+	handle("GET /favicon.svg", serveIcon("favicon.svg"))
+	handle("GET /apple-touch-icon.png", serveIcon("apple-touch-icon.png"))
 
-	kami.Get("/login", loginForm)
-	kami.Post("/login", login)
-	kami.Post("/logout", logout)
+	handle("GET /login", loginForm)
+	handle("POST /login", login)
+	handle("POST /logout", logout)
 
-	kami.Get("/register", registerForm)
-	kami.Post("/register", register)
+	handle("GET /register", registerForm)
+	handle("POST /register", register)
 
-	kami.Get("/forgot", forgotForm)
-	kami.Post("/forgot", forgot)
+	handle("GET /forgot", forgotForm)
+	handle("POST /forgot", forgot)
 
-	kami.Get("/recover", recoverForm)
-	kami.Post("/recover", doRecover)
+	handle("GET /recover", recoverForm)
+	handle("POST /recover", doRecover)
 
-	kami.Get("/upload", uploadForm)
-	kami.Post("/upload/track", uploadStart)
-	kami.Post("/upload/tracks", uploadStart2)
-	kami.Post("/upload/track/:id", uploadFinish)
+	handle("GET /upload", uploadForm)
+	handle("POST /upload/track", uploadStart)
+	handle("POST /upload/track/{id}", uploadFinish)
+	handle("PUT /upload/data/{id}", uploadData)
+	handle("GET /pic/{id}", showPicture)
 
-	kami.Get("/sync", syncForm)
+	handle("GET /sync", syncForm)
+	handle("GET /export/library.zip", exportLibrary)
 
-	kami.Use("/music", cacheHeaders)
-	kami.Get("/music", showMusic)
-	kami.Head("/music", showMusicHead)
-	kami.Use("/music/", cacheHeaders)
-	kami.Get("/music/:kind", showMusic)
-	kami.Head("/music/:kind", showMusicHead)
+	use("/music", requireStanding)
+	use("/music/", requireStanding)
+	use("/rest/", requireStanding)
+	use("/music", cacheHeaders)
+	use("/music/", cacheHeaders)
+	handle("GET /music", showMusic)
+	handle("HEAD /music", showMusicHead)
+	handle("GET /music/{$}", showMusic)
+	handle("HEAD /music/{$}", showMusicHead)
+	handle("GET /music/{kind}", showMusic)
+	handle("HEAD /music/{kind}", showMusicHead)
 
-	kami.Delete("/track/:id", deleteTrack)
-	kami.Post("/track/:id/played", incPlays)
-	kami.Post("/track/:id/resume", setResume)
-	kami.Get("/track/:id/edit", editTrackForm)
-	kami.Post("/track/:id/edit", editTrack)
+	handle("DELETE /track/{id}", deleteTrack)
+	handle("POST /track/{id}/played", incPlays)
+	handle("POST /track/{id}/resume", setResume)
+	handle("GET /track/{id}/lyrics", showLyrics)
+	handle("GET /track/{id}/edit", editTrackForm)
+	handle("POST /track/{id}/edit", editTrack)
 
-	kami.Get("/dl/tracks/:id", downloadTrack)
+	handle("GET /dl/tracks/{id}", downloadTrack)
 
-	kami.Get("/playlist/", createPlaylistForm)
-	kami.Post("/playlist/", createPlaylist)
-	kami.Get("/playlist/:id", createPlaylistForm)
-	kami.Post("/playlist/:id", createPlaylist)
+	use("/playlist", requireStanding)
+	use("/playlist/", requireStanding)
+	use("/playlists", requireStanding)
+	use("/playlists/", requireStanding)
+	handle("GET /playlist", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/music/playlists", http.StatusFound)
+	})
+	handle("GET /playlists", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/music/playlists", http.StatusFound)
+	})
+	handle("GET /playlists/{$}", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/music/playlists", http.StatusFound)
+	})
+	handle("GET /playlist/{$}", createPlaylistForm)
+	handle("POST /playlist/{$}", createPlaylist)
+	handle("GET /playlist/{id}", createPlaylistForm)
+	handle("POST /playlist/{id}", createPlaylist)
+	handle("DELETE /playlist/{id}", deletePlaylist)
 
-	kami.Post("/cache/reset", resetCache)
+	handle("GET /subsonic", subsonicHelp)
 
-	kami.Get("/subsonic", subsonicHelp)
+	handle("GET /settings", settingsForm)
+	handle("POST /settings", settings)
+	handle("GET /settings/password", changePasswordForm)
+	handle("POST /settings/password", changePassword)
+	handle("POST /settings/app-passwords", createAppPassword)
+	handle("POST /settings/delete", deleteOwnAccount)
+	handle("POST /settings/pgp", savePGPKey)
+	handle("POST /settings/mail-test", sendTestMail)
+	handle("POST /settings/app-passwords/{id}/revoke", revokeAppPassword)
 
-	kami.Use("/settings", ensureCustomer)
-	kami.Get("/settings", settingsForm)
-	kami.Post("/settings", settings)
-	kami.Get("/settings/password", changePasswordForm)
-	kami.Post("/settings/password", changePassword)
-	kami.Use("/settings/payment", ensureCustomer)
-	kami.Get("/settings/payment", stripePortal)
+	handle("GET /buy/{$}", buyForm)
+	handle("POST /buy/checkout", topUp)
+	handle("POST /buy/refund", requestRefund)
+	handle("GET /buy/success", topUpDone)
 
-	kami.Use("/buy/", ensureCustomer)
-	kami.Get("/buy/", buyForm)
-	kami.Post("/buy/checkout", stripeCheckout)
-	kami.Get("/buy/success", stripeCheckoutResult)
+	use("/admin/", requireAdmin)
+	handle("GET /admin/{$}", adminIndex)
+	handle("GET /admin/user/{id}", adminUser)
+	handle("POST /admin/user/{id}/credit", adminCredit)
+	handle("POST /admin/user/{id}/exempt", adminExempt)
+	handle("POST /admin/user/{id}/delete", adminDelete)
 
-	// kami.Use("/payment/", requireLogin)
-	// kami.Get("/payment/", stripePortal)
-
-	kami.Use("/admin/", requireAdmin)
-	kami.Get("/admin/", adminIndex)
-
-	kami.Post("/external/stripe", stripeWebhook)
+	handle("POST /external/btcpay", btcpayWebhook)
 }
 
 func init() {
@@ -125,9 +150,6 @@ func Load() {
 
 	log.Println("Loading translations...")
 	loadTranslations()
-
-	log.Println("Checking optional features...")
-	initStripe()
 
 	log.Println("Loaded up")
 }

@@ -3,12 +3,9 @@ package web
 import (
 	"context"
 	"math/rand"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
-
-	// "github.com/davecgh/go-spew/spew"
 
 	"github.com/expr-lang/expr"
 	"github.com/posener/order"
@@ -23,7 +20,7 @@ type Library struct {
 	artists map[string]*artistInfo
 	albums  map[string]*albumInfo
 	genres  map[string]*genreInfo
-	idmap   map[string]tube.Track // TODO: pointer?
+	idmap   map[string]tube.Track
 }
 
 type genreInfo struct {
@@ -33,11 +30,10 @@ type genreInfo struct {
 }
 
 type artistInfo struct {
-	id      string
 	ssid    tube.SSID
 	name    string
 	tracks  []tube.Track
-	albums  map[string]struct{} // AlbumSSID
+	albums  map[string]struct{}
 	starred time.Time
 }
 
@@ -55,7 +51,6 @@ type albumInfo struct {
 	ssid     tube.SSID
 	name     string
 	artist   string
-	artists  map[string]struct{}
 	genres   map[string]int
 	tracks   []tube.Track
 	date     time.Time
@@ -82,12 +77,6 @@ func (a *albumInfo) add(t tube.Track) {
 		a.artist = t.Info.AnyArtist()
 	}
 
-	if t.Info.Artist != "" {
-		a.artists[t.Info.Artist] = struct{}{}
-	}
-	if t.Info.AlbumArtist != "" {
-		a.artists[t.Info.AlbumArtist] = struct{}{}
-	}
 	if t.Genre != "" {
 		a.genres[t.Genre] = a.genres[t.Genre] + 1
 	}
@@ -109,7 +98,7 @@ func (a *albumInfo) add(t tube.Track) {
 	}
 
 	if a.picture == "" {
-		a.picture = t.ID // TODO: hmm
+		a.picture = t.ID
 	}
 }
 
@@ -155,17 +144,13 @@ func NewLibrary(tracks []tube.Track, stars map[tube.SSID]tube.Star) *Library {
 	}
 
 	for i, t := range tracks {
-		// track
 		t.Starred = lib.starred(t.TrackSSID())
 		tracks[i] = t
 		lib.idmap[t.ID] = t
 
-		// artist
 		artist, ok := lib.artists[t.ArtistSSID().String()]
 		if !ok {
 			artist = &artistInfo{
-				// TODO: reconcile if different between tracks
-				id:      t.ArtistSSID().String(),
 				ssid:    t.ArtistSSID(),
 				name:    t.Info.AnyArtist(),
 				albums:  make(map[string]struct{}),
@@ -176,11 +161,9 @@ func NewLibrary(tracks []tube.Track, stars map[tube.SSID]tube.Star) *Library {
 		artist.tracks = append(artist.tracks, t)
 		artist.albums[t.AlbumSSID().String()] = struct{}{}
 
-		// album
 		album, ok := lib.albums[t.AlbumSSID().String()]
 		if !ok {
 			album = &albumInfo{
-				artists: make(map[string]struct{}),
 				genres:  make(map[string]int),
 				starred: lib.starred(t.AlbumSSID()),
 			}
@@ -188,7 +171,6 @@ func NewLibrary(tracks []tube.Track, stars map[tube.SSID]tube.Star) *Library {
 		}
 		album.add(t)
 
-		// genre
 		genre := t.Genre
 		stats, ok := lib.genres[t.Genre]
 		if !ok {
@@ -221,20 +203,16 @@ func (lib *Library) Genres() []*genreInfo {
 func (lib *Library) Artists(org organize) []*artistInfo {
 	artists := make([]*artistInfo, 0, len(lib.artists))
 	for _, a := range lib.artists {
-		// TODO: year etc?
 
-		// filter by folder
 		if !org.ssid.IsZero() && !a.matches(org.ssid) {
 			continue
 		}
 
-		// filter by starred
 		if org.starred && a.starred.IsZero() {
 			continue
 		}
 
 		if org.query != "" {
-			// TODO: fancier?
 			q := strings.ToLower(org.query)
 			if !strings.Contains(strings.ToLower(a.name), q) {
 				continue
@@ -244,7 +222,6 @@ func (lib *Library) Artists(org organize) []*artistInfo {
 		artists = append(artists, a)
 	}
 
-	// TODO: sorting?
 	sort.Slice(artists, func(i, j int) bool {
 		return artists[i].name < artists[j].name
 	})
@@ -255,7 +232,6 @@ func (lib *Library) Artists(org organize) []*artistInfo {
 func (lib *Library) Albums(org organize) []*albumInfo {
 	albums := make([]*albumInfo, 0, len(lib.albums))
 	for _, a := range lib.albums {
-		// filter by year
 		if org.fromYear != 0 || org.toYear != 0 {
 			if org.fromYear < org.toYear {
 				if org.fromYear != 0 && a.lowYear < org.fromYear {
@@ -274,25 +250,21 @@ func (lib *Library) Albums(org organize) []*albumInfo {
 			}
 		}
 
-		// filter by genre
 		if org.genre != "" {
 			if _, ok := a.genres[org.genre]; !ok {
 				continue
 			}
 		}
 
-		// filter by folder
 		if !org.ssid.IsZero() && !a.matches(org.ssid) {
 			continue
 		}
 
-		// filter by starred
 		if org.starred && a.starred.IsZero() {
 			continue
 		}
 
 		if org.query != "" {
-			// TODO: fancier?
 			q := strings.ToLower(org.query)
 			if !strings.Contains(strings.ToLower(a.name), q) {
 				continue
@@ -301,15 +273,6 @@ func (lib *Library) Albums(org organize) []*albumInfo {
 
 		albums = append(albums, a)
 	}
-
-	// commonCond := []interface{}{
-	// 	func(a, b tube.Track) int { return a.Disc - b.Disc },
-	// 	func(a, b tube.Track) int { return a.Number - b.Number },
-	// 	func(a, b tube.Track) int { return strings.Compare(a.Title, b.Title) },
-	// 	func(a, b tube.Track) int { return strings.Compare(a.Filename, b.Filename) },
-	// 	func(a, b tube.Track) int { return strings.Compare(a.ID, b.ID) },
-	// }
-	// _ = commonCond
 
 	switch org.by {
 	case "random":
@@ -321,7 +284,6 @@ func (lib *Library) Albums(org organize) []*albumInfo {
 			func(a, b *albumInfo) int { return invert(a.date.Compare(b.date)) },
 		).Sort(albums)
 	case "highest":
-		// TODO: ???
 	case "frequent":
 		order.By(
 			func(a, b *albumInfo) int { return invert(a.plays - b.plays) },
@@ -382,21 +344,17 @@ func (lib *Library) Albums(org organize) []*albumInfo {
 func (lib *Library) Tracks(org organize) []tube.Track {
 	tracks := []tube.Track{}
 	for _, t := range lib.tracks {
-		// filter by genre
 		if org.genre != "" && t.Genre != org.genre {
 			continue
 		}
-		// filter by folder
 		if !org.ssid.IsZero() && !t.MatchesSSID(org.ssid) {
 			continue
 		}
-		// filter by starred
 		if org.starred && t.Starred.IsZero() {
 			continue
 		}
 
 		if org.query != "" {
-			// TODO: fancier?
 			q := strings.ToLower(org.query)
 			if !strings.Contains(strings.ToLower(t.Title), q) {
 				continue
@@ -480,7 +438,7 @@ func getLibrary(ctx context.Context, u tube.User) (*Library, error) {
 	})
 	wg.Go(func() error {
 		var err error
-		stars, err = tube.GetStars(ctx, u.ID)
+		stars, err = u.GetStars(ctx)
 		return err
 	})
 	if err := wg.Wait(); err != nil {
@@ -488,12 +446,4 @@ func getLibrary(ctx context.Context, u tube.User) (*Library, error) {
 	}
 	lib := NewLibrary(tracks, stars)
 	return lib, nil
-}
-
-func resetCache(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	u, _ := userFrom(ctx)
-	if err := tube.RecreateDump(ctx, u.ID, time.Now().UTC()); err != nil {
-		panic(err)
-	}
-	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }

@@ -3,103 +3,156 @@
 	<head>
 		{{render "_head" $}}
 		<title>{{tr "titleprefix"}}{{tr "tos_title"}}</title>
+		<style>
+			main li {
+				margin-bottom: 0.4em;
+			}
+			main section {
+				margin-bottom: 1.5em;
+			}
+		</style>
 	</head>
 	<body>
 		{{render "_nav" $}}
+		{{$s := tr "service_name"}}
+		{{$p := pricing}}
 		<main>
 			<h2>{{tr "tos_title"}}</h2>
-			<p>inter.tube is run by one guy. I don't have lawyers or venture capital funding. Our (my) goal is to foster an evironment of mutual respect between us and the users and eliminate as much Bullshit as possible.</p>
-			<p>The gist of these terms is: we won't take ownership of your content, you need to be a paying member to retain access, we will do all that we can to Not Be Evil.</p>
-			<p>
+			<p><small>Last updated {{tr "tos_updated"}}</small></p>
+			<p>{{$s}} is run by one person. No investors, no legal department. The goal is mutual respect with the people who use it, and as little BS as possible. In these terms, "{{$s}}" means both the service and whoever runs it, {{tr "tos_operator"}}.</p>
+			<p><b>The short version:</b> your files stay yours and are encrypted on the server. Your password and recovery key are what unlock them, so keep your recovery key safe. Some storage is free, and more is paid. {{$s}} will always try to treat you fairly and respect your privacy. In return, use it responsibly and understand that a one-person service can't promise perfection.</p>
+
+			<section>
 				<h3>General</h3>
 				<ul>
-					<li>These terms may change.</li>
-					<li>You have to agree to the terms of service to use the site.</li>
-					<li>You must be a member to access the site.</li>
-					<li>We can't guarantee 100% uptime. In the event of significant downtime (1 day or more), paid users will receive credit for the time the site was inaccessible.</li>
+					<li>By creating an account or using {{$s}}, you agree to these terms. If you don't agree, please don't use it.</li>
+					<li>You must be at least 13 years old, or 16 in the EU and UK.</li>
+					<li>You need an account to use the site.</li>
+					<li>These terms may be updated. Any meaningful change will be announced on the site and by e-mail at least 14 days before it takes effect. If you keep using {{$s}} after that, you accept the new terms. If you don't agree, you can delete your account before then.</li>
+					<li>How personal information is handled is explained in the <a href="/privacy">Privacy Policy</a>.</li>
 				</ul>
+			</section>
+
+			<section>
+				<h3>Your account</h3>
+				<ul>
+					<li>Keep your password and recovery key safe. You're responsible for activity on your account.</li>
+					<li>You may let people in your household use your account, but you're responsible for what they do. Don't use a shared account to give others access to music you don't have the rights to.</li>
+					<li>If you add an OpenPGP public key in your settings, every e-mail {{$s}} sends you is encrypted to it, including password reset links. Keep access to your private key, or you won't be able to read them.</li>
+				</ul>
+			</section>
+
+			<section>
 				<h3>Payment</h3>
 				<ul>
-					<li>If you don't pay for the service, you may lose access to your files until you pay.</li>
-					<li>You can cancel your subscription at any time.</li>
-					<li>The storage quota provided by plans may be changed. You will be notified on the site.</li>
-					<li>Accounts registered after Early Access include a free 14-day trial. After this trial, you must subscribe to access the site. You can cancel your trial at any time. Unless you sign up for a paid plan, you won't be charged.</li>
-					<li>If you are unsatisfied with the product, you may request a refund during your first month of service.</li>
-					<li>If you exceed your storage quota, you may temporarily lose access to some of your files until you upgrade your plan or delete excess files.</li>
-					<li>We will keep your files for at least 2 months after you stop paying, but after that they may be deleted. Ideally, we will keep them as long as possible.</li>
+					<li><b>Free storage.</b> Every account gets {{$p.FreeBytes | bytesize}} of storage for free, with no time limit and no payment needed.</li>
+					<li><b>Storage above that</b> costs {{$p.PerGBMonth}} per GB per month. It's taken from your balance once a day, based on how much you're storing that day. The billing page shows your balance, your current monthly cost and how long your balance will last. Uploading past the free {{$p.FreeBytes | bytesize}} needs enough balance to cover at least {{$p.MinUploadDays}} days of storage at the new size.</li>
+					<li><b>How you pay.</b> {{tr "tos_payment_methods"}} are accepted{{if payment}}, through a self-hosted BTCPay Server{{else}}, sent directly and credited to your balance by hand{{end}}. No outside payment company is involved, and card or bank details are never collected.</li>
+					<li><b>Prices.</b> Prices are in US dollars. When you top up, the invoice converts the amount to crypto at the exchange rate at the time it's created. Invoices expire after a short time, so pay before then or create a new one.</li>
+					<li><b>Your balance.</b> Payments are added to your balance once they're confirmed on the network. Nothing is ever charged automatically: you only pay when you choose to top up.</li>
+					<li><b>Crypto is final.</b> Payments can't be reversed, so check the amount and address before you send. Network fees are paid by the sender. If you underpay, overpay or pay an expired invoice, e-mail {{tr "tos_contact"}} and it will be sorted out as fairly as possible.</li>
+					<li><b>Refunds.</b> You can refund unused balance from payments made in the last {{$p.RefundDays}} days yourself, from the billing page, once a day. You'll get a link where you enter your own wallet address, and each payout is reviewed before it's sent. The refund is the dollar value, paid in crypto at the exchange rate when it's sent{{if $p.RefundFeePct}}, minus {{$p.RefundFeePct}}% to cover network fees{{end}}. Credit given to you by {{$s}} can't be refunded.</li>
+					<li><b>When your balance runs out:</b>
+						<ul>
+							<li>For the first {{$p.GraceDays}} days, everything keeps working, except uploads past the free {{$p.FreeBytes | bytesize}}.</li>
+							<li>From day {{$p.GraceDays}} to day {{$p.LockDays}}, playback pauses, but you can still sign in, top up and download your files.</li>
+							<li>After {{$p.LockDays}} days, your library is deleted. Your account and settings are kept.</li>
+							<li>You'll be e-mailed when your balance runs out, before playback pauses, and at least {{$p.DeleteWarnDays}} days before anything is deleted.</li>
+							<li>If your balance went below zero, that amount is written off. You'll never be asked to pay it.</li>
+						</ul>
+					</li>
+					<li><b>Changes.</b> Prices and storage amounts, including the free allowance, may change. You'll get at least 30 days' notice before a change that reduces what you get or increases what you pay.</li>
 				</ul>
-				<h3>Ownership</h3>
+			</section>
+
+			<section>
+				<h3>Your content</h3>
 				<ul>
-					<li>You may not upload files you don't have the rights to.</li>
-					<li>You may not upload anything that violates the law.</li>
-					<li>Users are completely responsible for their content. We don't claim ownership of any uploaded content. We only use the files in order to provide services to the users that uploaded them.</li>
-					<li>You may not abuse the service. This includes denial of service, hacking, accessing other people's accounts or files, etc. However, if you responsibly disclose vulnerabilities we won't punish you; you'll receive some free credits as appreciation for your cooperation.</li>
-					<li>You may not share your account if it violates the law with regards to the music you upload.</li>
+					<li>You own what you upload. {{$s}} claims no ownership of any of it.</li>
+					<li>To run the service, you give {{$s}} permission to process your files while your library is unlocked: read their tags and artwork, encrypt them, store them, and decrypt them to play or download for you. They're never used for anything else. This permission ends when your files are deleted.</li>
+					<li>Only upload files you have the right to upload. Nothing you upload may break the law.</li>
+					<li>You are responsible for your content.</li>
+					<li>Keep your own copies. This isn't a backup service. Because your library is encrypted with keys {{$s}} doesn't keep, it can't be recovered if those keys are lost.</li>
 				</ul>
-				<h3>Environment</h3>
+			</section>
+
+			<section>
+				<h3>Encryption and your keys</h3>
+				<p>Your library is encrypted, and your password and recovery key are what unlock it. Keeping them safe is the one part only you can do, and it's what keeps your account and your library intact.</p>
 				<ul>
-					<li>The site requires JavaScript. It works in the latest version of Chrome, Firefox, Safari. Some browsers might not support every feature.</li>
-					<li>We can't guarantee support for any device, operating system, program, etc. You are responsible for using something that works. That being said, we'll do our best to support devices within reason.</li>
+					<li>Your files, covers, titles, playlists and stars are encrypted on the server. Your library can only be unlocked while you or one of your devices is signed in, unless you create a compatibility app password (see Third-party apps).</li>
+					<li>While you're connected, the server decrypts what you're using so it can process uploads and play your music. This is encryption at rest, not end-to-end encryption.</li>
+					<li><b>Save your recovery key.</b> You'll get it once, right after signing up, and it can't be shown again. Store it somewhere safe and separate from your password, such as a password manager or on paper.</li>
+					<li><b>Forgot your password?</b> Reset it by e-mail, then enter your recovery key. Your library, balance and settings stay exactly as they were. Reset links expire after one hour.</li>
+					<li><b>Lost both?</b> Your account and balance can still be restored, but your library can't. After you confirm, it's deleted and you start again with an empty library.</li>
 				</ul>
-			</p>
-			<h3>Support</h3>
-			<p>
+			</section>
+
+			<section>
+				<h3>Third-party apps</h3>
 				<ul>
-					<li>Support is provided by e-mail. We will try to accomodate questions as soon as possible.</li>
-					<li>Address: greg.roseberry@gmail.com</li>
+					<li>You can connect apps that support the Subsonic API using an app password. Create one for each device in your settings.</li>
+					<li>App passwords are strict by default: nothing is kept on the server that could unlock your library. Some apps need their plaintext password setting turned on, or the app password used as an API key. If an app can't do either, you can create a compatibility app password instead; the server then keeps a copy that can unlock your library.</li>
+					<li>Connected apps are made by other people and have their own terms and privacy policies. {{$s}} doesn't control them and isn't responsible for what they do.</li>
+					<li>You can revoke an app password at any time, which immediately ends that app's access.</li>
+					<li>Apps that overload the service or put users at risk may be blocked.</li>
+					<li>If you build an app or script that uses the service, it must follow these terms, use reasonable request rates, and only access accounts whose owners have authorized it.</li>
 				</ul>
-			</p>
-			<br>
-			<h3 id="tokusho">特定商取引法に基づく表示</h3>
-			<p>We are located in Japan. Servers are primarily in Oregon. The following is a notice required by the Specified Commercial Transaction Act.</p>
-			<div>
-				<table>
-					<tr>
-						<td>販売業者名</td>
-						<td>ローズベリー　グレゴリー</td>
-					</tr>
-					<tr>
-						<td>販売責任者</td>
-						<td>ローズベリー　グレゴリー</td>
-					</tr>
-					<tr>
-						<td>サイト</td>
-						<td>inter.tube（インターチューブ）<br>https://inter.tube</td>
-					</tr>
-					<tr>
-						<td>所在地</td>
-						<td>東京都港区　※詳細については問い合わせください</td>
-					</tr>
-					<tr>
-						<td>商品の名称</td>
-						<td>サービス利用料課金</td>
-					</tr>
-					<tr>
-						<td>販売価格</td>
-						<td><a href="/buy/">別途ページにて記載しています</a></td>
-					</tr>
-					<tr>
-						<td>連絡先</td>
-						<td>greg.roseberry@gmail.com</td>
-					</tr>
-					<tr>
-						<td>お支払方法</td>
-						<td>クレジットカード</td>
-					</tr>
-					<tr>
-						<td>引渡し時期</td>
-						<td>即時</td>
-					</tr>
-					<tr>
-						<td>返金</td>
-						<td>アカウント登録日から一ヶ月以内であれば返金に応じます。問い合わせください。</td>
-					</tr>
-					<tr>
-						<td>コンテンツの閲覧保証ブラウザ</td>
-						<td>Chrome / Firefox / Safariの各最新版</td>
-					</tr>
-				</table>
-			</div>
+			</section>
+
+			<section>
+				<h3>Don't abuse the service</h3>
+				<p>Don't attack or overload the service, hack it, scrape it, access other people's accounts or files, or use it to harm others.</p>
+				<p>Security research is welcome. If you find a vulnerability, report it privately to {{tr "tos_security_contact"}}. Don't access or change other users' data, and allow reasonable time for a fix before disclosing it publicly. Act in good faith this way and no action will be taken against you, and you'll get some free credit as thanks.</p>
+			</section>
+
+			<section>
+				<h3>Copyright complaints</h3>
+				<p>If you believe something on {{$s}} infringes your copyright, send a notice to the designated agent: {{tr "tos_dmca_agent"}}. Infringing material will be removed, and the accounts of repeat infringers will be closed. If your content was removed by mistake, you can send a counter-notice to the same address.</p>
+			</section>
+
+			<section>
+				<h3>Ending service</h3>
+				<ul>
+					<li>You can delete your account at any time from your settings page. This permanently deletes your files and can't be undone. Unused balance isn't refunded automatically, so request a refund first if you want one.</li>
+					<li>{{$s}} may suspend or close an account that breaks these terms, puts the service or other users at risk, or where the law requires it. Unless the situation is serious or urgent, you'll be warned first and given a chance to download your files.</li>
+					<li>If your account is closed without cause, or {{$s}} shuts down, you'll get at least 30 days' notice and a refund of your unused balance.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>Uptime and support</h3>
+				<ul>
+					<li>{{$s}} can't guarantee 100% uptime. If the site is unavailable for 1 day or more, paying users will receive credit for that time. Request it within 30 days. This credit is your only remedy for downtime.</li>
+					<li>The site requires JavaScript and works in current versions of Chrome, Firefox and Safari. Some browsers might not support every feature.</li>
+					<li>Other devices, operating systems and apps are supported as far as reasonably possible, but there are no guarantees. You're responsible for using something that works.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>Backing up</h3>
+				<ul>
+					<li>Users are responsible for backing up the content they upload.</li>
+					<li>Users are allowed to export their content from the app or use the syncing feature to export to their device automatically.</li>
+					<li>The CLI tool is also available to export content.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>The legal bits (in plain words)</h3>
+				<ul>
+					<li><b>No guarantees.</b> The service is provided "as is" and "as available," without warranties of any kind, to the extent the law allows.</li>
+					<li><b>Limit on liability.</b> To the extent the law allows, {{$s}} isn't liable for indirect or consequential damages, such as lost data, lost profits or lost time. Its total liability for any claim is limited to the greater of what you paid in the last 12 months or $50.</li>
+					<li><b>Your responsibility.</b> In the rare case that someone brings a legal claim against {{$s}} over content you uploaded, or because you broke these terms, you agree to cover its reasonable costs.</li>
+					<li>If something goes wrong, e-mail {{tr "tos_contact"}}. Almost every problem can be sorted out by talking, and {{$s}} will work with you in good faith to fix it. These terms are governed by the laws of {{tr "tos_law"}}.</li>
+					<li>If any part of these terms can't be enforced, the rest still applies.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>Contact</h3>
+				<p>Questions about these terms: {{tr "tos_contact"}}</p>
+			</section>
 		</main>
 		{{render "_foot" $}}
 	</body>

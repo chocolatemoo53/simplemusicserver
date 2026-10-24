@@ -1,8 +1,37 @@
-<nav>
-	{{- $musiclink := concat "/music/" opts.MusicLink.String -}}
-	<ul>
-		<li><a href="{{$musiclink}}" {{if (eq path $musiclink)}} class="active" {{end}}>{{tr "nav_music"}}</a></li>
-		<li><a href="/upload" {{if (eq path "/upload")}} class="active" {{end}}>{{tr "nav_upload"}}</a></li>
-		<li><a href="/settings" {{if (eq path "/settings")}} class="active" {{end}}>{{tr "nav_settings"}}</a></li>
+{{- $me := me -}}
+<nav class="shell" aria-label='{{tr "nav_main"}}'>
+	<a class="wordmark" href="/">{{render "_icon" "logo"}}{{tr "service_name"}}</a>
+	<a class="btn shell-upload" href="/upload">{{render "_icon" "plus"}}{{tr "nav_upload_music"}}</a>
+	<ul class="shell-links">
+		<li><a href="/" {{if (eq path "/")}}aria-current="page"{{end}}>{{render "_icon" "home"}}{{tr "nav_index"}}</a></li>
+		<li><a href="/music/" {{if (or (eq path "/music/") (eq path "/music"))}}aria-current="page"{{end}}>{{render "_icon" "tracks"}}{{tr "nav_tracks"}}</a></li>
+		<li><a href="/music/albums" {{if (eq path "/music/albums")}}aria-current="page"{{end}}>{{render "_icon" "albums"}}{{tr "nav_albums"}}</a></li>
+		<li><a href="/music/playlists" {{if (or (eq path "/music/playlists") (hasprefix path "/playlist"))}}aria-current="page"{{end}}>{{render "_icon" "playlist"}}{{tr "nav_playlists"}}</a></li>
+		<li class="mobile-only"><a href="/upload" {{if (eq path "/upload")}}aria-current="page"{{end}}>{{tr "nav_upload"}}</a></li>
+		<li class="shell-gap"><a href="/sync" {{if (eq path "/sync")}}aria-current="page"{{end}}>{{render "_icon" "sync"}}{{tr "nav_sync"}}</a></li>
+		<li><a href="/subsonic" {{if (eq path "/subsonic")}}aria-current="page"{{end}}>{{render "_icon" "phone"}}{{tr "nav_subsonic_apps"}}</a></li>
+		<li><a href="/settings" {{if (eq path "/settings")}}aria-current="page"{{end}}>{{render "_icon" "settings"}}{{tr "nav_settings"}}</a></li>
+		{{if isadmin}}
+		<li><a href="/admin/" {{if (eq path "/admin/")}}aria-current="page"{{end}}>{{render "_icon" "admin"}}{{tr "nav_admin"}}</a></li>
+		{{end}}
 	</ul>
+	<div class="shell-foot">
+		<div class="shell-storage">
+			<strong class="figures">{{tr "shell_stored" ($me.Usage | bytesize)}}</strong>
+			{{if canpay}}
+				{{$state := state $me}}
+				{{if (or (eq $state "grace") (eq $state "locked") (eq $state "cleanup"))}}
+					<span class="warn">{{tr "shell_balance_out"}}</span>
+				{{else}}
+					<span class="figures">{{tr "shell_balance" $me.Balance}}{{with paiduntil $me}}, {{tr "shell_until" (. | date)}}{{end}}</span>
+				{{end}}
+				<a href="/buy/">{{tr "nav_credit"}}</a>
+			{{end}}
+		</div>
+		<form class="lock" action="/logout" method="POST">
+			<p class="lock-title">{{render "_icon" "unlock"}}{{tr "lock_title"}}</p>
+			<p>{{tr "lock_body"}}</p>
+			<button type="submit">{{tr "lock_button"}}</button>
+		</form>
+	</div>
 </nav>

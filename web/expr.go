@@ -12,18 +12,15 @@ func compile(code string) (*vm.Program, error) {
 	options := []expr.Option{
 		expr.Env(ExprEnv{}),
 
-		// Operators override for date comprising.
 		expr.Operator("==", "Equal"),
 		expr.Operator("<", "Before"),
 		expr.Operator("<=", "BeforeOrEqual"),
 		expr.Operator(">", "After"),
 		expr.Operator(">=", "AfterOrEqual"),
 
-		// Time and duration manipulation.
 		expr.Operator("+", "Add"),
 		expr.Operator("-", "Sub"),
 
-		// Operators override for duration comprising.
 		expr.Operator("==", "EqualDuration"),
 		expr.Operator("<", "BeforeDuration"),
 		expr.Operator("<=", "BeforeOrEqualDuration"),

@@ -1,124 +1,246 @@
 <!doctype html>
-<html>
+<html lang="{{lang}}">
 	<head>
 		{{render "_head" $}}
-		<title>{{tr "titleprefix"}}{{tr "index_title"}}</title>
+		<title>{{tr "titleprefix"}}{{tr "nav_index"}}</title>
 		<style>
-			noscript, #unpaid {
+			.page-head {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: flex-end;
+				justify-content: space-between;
+				gap: 16px;
+				margin-bottom: 8px;
+			}
+			.page-head p {
+				margin: 0;
+				color: var(--muted);
+				font-size: 16px;
+			}
+			.actions {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 10px;
+			}
+			noscript {
 				display: block;
-				font-weight: bold;
-				padding: 1em;
-				background: #aa0909;
-				color: white;
+				margin: 16px 0;
+				padding: 12px 16px;
+				border-radius: var(--r);
+				background: var(--surface);
 			}
-
-			#unpaid a, #unpaid a:visited {
-				color: white;
+			.section-head {
+				display: flex;
+				align-items: baseline;
+				justify-content: space-between;
+				gap: 16px;
+				margin: 36px 0 16px;
 			}
-
-			table.linktable {
-				table-layout: fixed;
-				width: 100%;
+			.section-head h2 {
+				margin: 0;
 			}
-
-			table.linktable td:first-child {
-				width: 1.5em;
+			.section-head a {
+				font-size: 16px;
+				font-weight: 600;
 			}
-
-			table.linktable td:first-child a {
+			.albums {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+				gap: 24px;
+				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+			.albums a {
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+				color: var(--text);
 				text-decoration: none;
 			}
-
-			#stuff:target {
-				background: var(--hi-bg);
+			.albums a:hover b {
+				text-decoration: underline;
 			}
-
-			main > h3 {
-				margin-top: 1em;
+			.cover {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				width: 100%;
+				aspect-ratio: 1 / 1;
+				border-radius: var(--radius, 10px);
+				background: var(--surface);
+				color: var(--muted);
+				object-fit: cover;
+			}
+			.cover .icon {
+				width: 40%;
+				height: 40%;
+				stroke-width: 1.2;
+			}
+			.meta {
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+				line-height: 1.35;
+			}
+			.meta b, .meta span {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.meta b {
+				font-size: 16px;
+				font-weight: 600;
+			}
+			.meta span {
+				font-size: 15px;
+				color: var(--muted);
+			}
+			.played {
+				width: 100%;
+				font-size: 16px;
+			}
+			.played th {
+				padding: 0 12px 10px;
+				border-bottom: 1px solid var(--line);
+			}
+			.played td {
+				height: 52px;
+				padding: 0 12px;
+				border-bottom: 1px solid var(--line-soft);
+				color: var(--muted);
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				max-width: 0;
+			}
+			.played td.title {
+				color: var(--text);
+				font-weight: 500;
+			}
+			.played .time {
+				width: 64px;
+				text-align: right;
+			}
+			.played .fmt-col {
+				width: 110px;
+			}
+			.fmt {
+				display: inline-block;
+				padding: 2px 8px;
+				border-radius: 6px;
+				border-radius: var(--radius, 6px);
+				background: var(--surface);
+				color: var(--muted);
+				font-size: 13px;
+				font-weight: 600;
+			}
+			.empty {
+				margin-top: 32px;
+				padding: 32px;
+				border: 1px solid var(--line);
+				border-radius: var(--r);
+				background: var(--surface);
+			}
+			.empty h2 {
+				margin-top: 0;
+			}
+			@media screen and (max-width: 767px) {
+				.albums {
+					grid-template-columns: repeat(2, minmax(0, 1fr));
+					gap: 18px 14px;
+				}
+				.played .album, .played .fmt-col {
+					display: none;
+				}
 			}
 		</style>
 	</head>
 	<body>
 		{{render "_nav" $}}
 		<main>
-			<h2>{{tr "index_title"}}</h2>
+			<header class="page-head">
+				<div>
+					<h1>{{tr "nav_index"}}</h1>
+					{{if $.Home.Tracks}}
+						<p>{{tc "home_tracks" $.Home.Tracks}} · {{tc "home_albums" $.Home.Albums}} · {{tc "home_artists" $.Home.Artists}}</p>
+					{{end}}
+				</div>
+				{{if $.Home.Tracks}}
+					<div class="actions">
+						<a class="btn btn-primary" href="/music/albums">{{tr "home_open"}}</a>
+						<a class="btn" href="/upload">{{tr "nav_upload_music"}}</a>
+					</div>
+				{{end}}
+			</header>
 			<noscript>{{tr "noscript"}}</noscript>
-			<p>{{tr "loggedinas" $.User.Email}}</p>
-			<p>{{tr "index_intro"}}</p>
-			{{if payment}}
-				{{if $.User.Trialing}}
-					{{if $.User.Expired}}
-						{{if $.User.Grandfathered}}
-							<p>※ {{tr "index_grandfathered"}} 🤑</p>
-						{{else}}
-							<p id="unpaid">⚠️ <a href="/buy/">{{tr "index_trialexpired"}}</a></p>
+			{{render "_standing" $}}
+
+			{{if (eq $.Home.Tracks 0)}}
+				<section class="empty" aria-labelledby="empty-title">
+					<h2 id="empty-title">{{tr "home_empty"}}</h2>
+					<p>{{tr "home_empty_body"}}</p>
+					<div class="actions">
+						<a class="btn btn-primary" href="/upload">{{render "_icon" "plus"}}{{tr "nav_upload_music"}}</a>
+						<a class="btn" href="/subsonic">{{tr "home_subsonic"}}</a>
+					</div>
+				</section>
+			{{else}}
+				<section aria-labelledby="recent">
+					<div class="section-head">
+						<h2 id="recent">{{tr "home_recent"}}</h2>
+						<a href="/music/albums">{{tr "home_all_albums"}}</a>
+					</div>
+					<ul class="albums">
+						{{range $.Home.Recent}}
+							<li>
+								<a href="/music/albums#{{.AlbumCode}}">
+									{{if .Picture.ID}}
+										<img class="cover" src="{{.Picture.URL}}" alt="" loading="lazy">
+									{{else}}
+										<span class="cover">{{render "_icon" "albums"}}</span>
+									{{end}}
+									<span class="meta">
+										{{with .Info.Album}}<b>{{.}}</b>{{else}}<b class="unknown">{{tr "unknownalbum"}}</b>{{end}}
+										<span>{{with (or .Info.AlbumArtist .Info.Artist)}}{{.}}{{else}}{{tr "unknownartist"}}{{end}}</span>
+									</span>
+								</a>
+							</li>
 						{{end}}
-					{{else}}
-						<p>※ {{tr "buy_trialnow" ($.User.TimeRemaining | days)}}</p>
-					{{end}}
-				{{else}}
-					{{if $.User.Expired}}
-						<p id="unpaid">⚠️ <a href="/settings">{{tr "index_subexpired"}}</a></p>
-					{{end}}
+					</ul>
+				</section>
+
+				{{if $.Home.Played}}
+					<section aria-labelledby="played">
+						<div class="section-head">
+							<h2 id="played">{{tr "home_played"}}</h2>
+							<a href="/music/">{{tr "home_all_tracks"}}</a>
+						</div>
+						<table class="played">
+							<thead>
+								<tr>
+									<th scope="col">{{tr "title"}}</th>
+									<th scope="col">{{tr "artist"}}</th>
+									<th scope="col" class="album">{{tr "album"}}</th>
+									<th scope="col" class="fmt-col">{{tr "format"}}</th>
+									<th scope="col" class="time">{{tr "time"}}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{{range $.Home.Played}}
+									<tr>
+										<td class="title">{{with (or .Info.Title .Filename)}}{{.}}{{end}}</td>
+										<td>{{or .Info.Artist .Info.AlbumArtist}}</td>
+										<td class="album">{{.Info.Album}}</td>
+										<td class="fmt-col">{{with .Filetype}}<span class="fmt">{{.}}</span>{{end}}</td>
+										<td class="time figures">{{if .Duration}}{{mmss .Duration}}{{end}}</td>
+									</tr>
+								{{end}}
+							</tbody>
+						</table>
+					</section>
 				{{end}}
 			{{end}}
-
-			<h3>{{tr "index_start"}}</h3>
-			<table class="linktable" id="quickstart">
-				<tr>
-					<td><a href="/upload">📂</a></td>
-					<td><a href="/upload" class="navlink">{{tr "index_start_upload"}}</a></td>
-				</tr>
-				<tr>
-					<td><a href="/music/">🎵</a></td>
-					<td><a href="/music/" class="navlink">{{tr "index_start_library"}}</a></td>
-				</tr>
-				{{if payment}}
-					{{if $.User.TrialOver}}
-					<tr>
-						<td><a href="/buy/">💸</a></td><td><a href="/settings/payment" class="navlink">{{tr "index_start_managesub"}}</a></td>
-					</tr>
-					{{else}}
-					<tr>
-						<td><a href="/buy/">💸</a></td><td><a href="/buy/" class="navlink">{{tr "index_start_buy"}}</a></td>
-					</tr>
-					{{end}}
-				{{end}}
-				<tr>
-					<td><a href="/settings">⚙️</a></td>
-					<td><a href="/settings" class="navlink">{{tr "index_start_settings"}}</a></td>
-				</tr>
-			</table>
-
-			{{if payment}}
-				<tr>
-					<td><a href="mailto:greg.roseberry@gmail.com" target="_blank">🆘 </a></td>
-				</tr>
-			{{end}}
-			</table>
-
-		{{if payment}}
-			<h2>{{tr "index_news"}}</h3>
-			<ul>
-				<li>[2023/09/05] migrated files to a new host (<a href="https://github.com/guregu/intertube/discussions/11" target="_blank">details</a>)</li>
-				<li>[2023/06/20] we are now <a href="https://github.com/guregu/intertube" target="_blank">open source</a> :-)</li>
-				<li>[2023/05/03] fixed a bug with the "next" button. re-enabled cache, reset it on settings page if it gets weird (and let me know)</li>
-				<li>[2023/04/16] added a <a href="/subsonic" target="_blank" class="navlink">subsonic help page</a></li>
-				<li>[2023/04/16] it's been a while. improved upload page (hopefully less errors) and added the <a href="/sync" target="_blank" class="navlink">experimental sync feature</a></li>
-				<li>[2021/01/27] added native app support via the subsonic API. <a href="/subsonic" target="_blank" class="navlink">check it out</a>.</li>
-				<li>[2021/01/18] we have a soft launch! subscriptions are now available. registration is open with a 14-day free trial.</li>
-			</ul>
-
-			<h2>{{tr "index_comingsoon"}}</h2>
-			<ul>
-				<li><s>going to experiment with adding subsonic API support so you can use native apps</s>
-					<ul><li>🆙 subsonic API beta now <a href="/subsonic" target="_blank" class="navlink">available</a>!</li></ul>
-				</li>
-				<li>library UI improvements (play count, tags, folder view?)</li>
-				<li>desktop app for uploading stuff</li>
-				<li>what features do you want to see? send me an e-mail.</li>
-			</ul>
-		{{end}}
 		</main>
 	</body>
 </html>

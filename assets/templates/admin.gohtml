@@ -3,24 +3,81 @@
 	<head>
 		{{render "_head" $}}
 		<title>{{tr "titleprefix"}}admin</title>
+		<style>
+			table.admin {
+				border-spacing: 0;
+			}
+			table.admin td, table.admin th {
+				padding: 0.2em 0.75em 0.2em 0;
+				text-align: left;
+			}
+		</style>
 	</head>
 	<body>
 		{{render "_nav" $}}
 		<main>
-			<h2>usage</h2>
-			<table>
+			{{with $.Notice}}<p><b>{{. | ucfirst}}</b></p>{{end}}
+			<h2>Overview</h2>
+			<table class="admin">
+				<tr><td>Users:</td><td>{{$.Totals.Users}} ({{$.Totals.Paying}} paying, {{$.Totals.Lapsed}} lapsed)</td></tr>
+				<tr><td>Storage:</td><td>{{$.Totals.Usage | bytesize}} in {{$.Totals.Tracks}} tracks</td></tr>
+				<tr><td>Monthly revenue at current usage:</td><td>{{$.Totals.Monthly}}</td></tr>
+				<tr><td>Balances held:</td><td>{{$.Totals.Balances}}</td></tr>
+				{{if $.Replicated}}
+				<tr><td>Replica:</td><td>{{$.Replicas.Copied}} copied, {{$.Replicas.Pending}} waiting to copy, {{$.Replicas.Erasing}} waiting to be erased{{if $.Replicas.Failing}}, <span class="error-msg">{{$.Replicas.Failing}} failing (see the server log)</span>{{end}}</td></tr>
+				{{else}}
+				<tr><td>Replica:</td><td>Not configured. Files exist in one place only.</td></tr>
+				{{end}}
+			</table>
+
+			{{if $.Stale}}
+				<h3 class="error-msg">Refunds stuck in processing</h3>
+				<p>Check BTCPay for a pull payment with the matching name before resolving these.</p>
+				<div class="table-scroll">
+				<table class="admin">
+					<tr><th>Name in BTCPay</th><th>User</th><th>Amount</th><th>Invoice</th><th>Since</th></tr>
+					{{range $.Stale}}
+						<tr>
+							<td>Refund {{.ID}}</td>
+							<td><a href="/admin/user/{{.UserID}}">{{.UserID}}</a></td>
+							<td>{{.Amount}}</td>
+							<td>{{.InvoiceID}}</td>
+							<td>{{.At | timestamp}}</td>
+						</tr>
+					{{end}}
+				</table>
+				</div>
+			{{end}}
+
+			<h2>Users</h2>
+			<div class="table-scroll">
+			<table class="admin">
+				<tr>
+					<th>ID</th>
+					<th>E-mail</th>
+					<th>Usage</th>
+					<th>Tracks</th>
+					<th>Balance</th>
+					<th>Monthly</th>
+					<th>State</th>
+					<th>Registered</th>
+					<th>Last active</th>
+				</tr>
 				{{range $.Users}}
 				<tr>
 					<td>{{.ID}}</td>
-					<td>{{.Email}}</td>
+					<td><a href="/admin/user/{{.ID}}">{{.Email}}</a></td>
 					<td>{{.Usage | bytesize}}</td>
-					<td>{{.Plan}}</td>
-					<td>{{.PlanStatus}}</td>
+					<td>{{.Tracks}}</td>
+					<td>{{.Balance}}</td>
+					<td>{{.MonthlyCost}}</td>
+					<td>{{state .}}{{if .Exempt}} (exempt){{end}}</td>
 					<td>{{.Regdate | timestamp}}</td>
 					<td>{{.LastMod | timestamp}}</td>
 				</tr>
 				{{end}}
 			</table>
+			</div>
 		</main>
 	</body>
 </html>

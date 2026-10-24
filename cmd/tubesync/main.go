@@ -1,14 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,27 +16,61 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"golang.org/x/net/publicsuffix"
 	"golang.org/x/term"
 
 	"github.com/guregu/intertube/tube"
 )
 
 const (
-	version = "0.1.0"
+	version = "0.2.0"
 )
+
+var defaultHost string
 
 var client *http.Client
 var rootPath string
 
 var (
 	parallel = flag.Int("parallel", 10, "number of simultaneous downloads")
-	host     = flag.String("host", "https://inter.tube", "host URL, change for custom deployments")
+	host     = flag.String("host", envOr("TUBESYNC_HOST", defaultHost), "server address, for example https://music.example.com (or set TUBESYNC_HOST)")
 	workDir  = flag.String("path", "", "path to music library directory, leave blank (default) for current directory")
 	help     = flag.Bool("help", false, "show this help message")
 )
 
 var ErrSkip = fmt.Errorf("skipped")
+
+var errWrongLogin = errors.New("wrong e-mail or app password (create an app password in Settings, under App passwords)")
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func normalizeHost(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return "", fmt.Errorf("invalid server address: %q", raw)
+	}
+	return u.Scheme + "://" + u.Host, nil
+}
+
+type basicAuth struct {
+	host, email, password string
+}
+
+func (b basicAuth) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Scheme+"://"+req.URL.Host == b.host {
+		req = req.Clone(req.Context())
+		req.SetBasicAuth(b.email, b.password)
+	}
+	return http.DefaultTransport.RoundTrip(req)
+}
 
 func main() {
 	flag.Parse()
@@ -53,26 +87,40 @@ func main() {
 		rootPath = *workDir
 	}
 
+	if *host == "" {
+		fmt.Print("server address (for example https://music.example.com): ")
+		fmt.Scanln(host)
+	}
+	server, err := normalizeHost(*host)
+	maybeDie(err)
+	*host = server
+
 	fmt.Println("welcome to tubesync version", version)
 	fmt.Println("   for", *host)
 	fmt.Println("library directory:", rootPath)
+	if strings.HasPrefix(*host, "http://") {
+		fmt.Println("warning: this address isn't HTTPS, so your app password is sent unencrypted")
+	}
 
-	var email string
-	fmt.Print("email (blank to quit): ")
-	fmt.Scanln(&email)
+	email := os.Getenv("TUBESYNC_EMAIL")
 	if email == "" {
-		fmt.Println("email is blank, bye")
+		fmt.Print("e-mail (blank to quit): ")
+		fmt.Scanln(&email)
+	}
+	if email == "" {
+		fmt.Println("e-mail is blank, bye")
 		os.Exit(1)
 	}
 
-	fmt.Print("password (hidden): ")
-	password, err := term.ReadPassword(int(syscall.Stdin))
-	maybeDie(err)
-
-	fmt.Println("\nlogging in as", email, "...")
-	err = login(email, string(password))
-	maybeDie(err)
-	fmt.Println("login successful")
+	password := os.Getenv("TUBESYNC_PASSWORD")
+	if password == "" {
+		fmt.Print("app password (hidden): ")
+		raw, err := term.ReadPassword(int(syscall.Stdin))
+		fmt.Println()
+		maybeDie(err)
+		password = string(raw)
+	}
+	client = &http.Client{Transport: basicAuth{host: *host, email: email, password: strings.TrimSpace(password)}}
 
 	fmt.Print("getting track metadata (might take a while)")
 	tracks, err := getTracks()
@@ -118,35 +166,12 @@ func main() {
 
 	fmt.Println("done~")
 	fmt.Printf("got %d error(s)\n", atomic.LoadInt64(errct))
-	fmt.Println("\nPress ENTER to exit")
-	fmt.Scanln()
+	if term.IsTerminal(int(syscall.Stdin)) {
+		fmt.Println("\nPress ENTER to exit")
+		fmt.Scanln()
+	}
 
 	os.Exit(0)
-}
-
-func login(email, pass string) error {
-	jar, err := cookiejar.New(&cookiejar.Options{
-		PublicSuffixList: publicsuffix.List,
-	})
-	if err != nil {
-		return err
-	}
-	client = &http.Client{
-		Jar: jar,
-	}
-
-	req := struct {
-		Email    string
-		Password string
-	}{
-		Email:    email,
-		Password: pass,
-	}
-	resp := struct {
-		Session string
-	}{}
-
-	return post("/api/v0/login", req, &resp)
 }
 
 func getTracks() (tube.Tracks, error) {
@@ -171,40 +196,16 @@ func getTracks() (tube.Tracks, error) {
 }
 
 func download(track tube.Track) error {
-	href := track.FileURL()
-	artist := track.Info.AlbumArtist
-	if artist == "" {
-		if track.Info.Artist != "" {
-			artist = track.Info.Artist
-		} else {
-			artist = "Unknown Artist"
-		}
+	fpath := filepath.Join(rootPath, filepath.FromSlash(track.VirtualPath()))
+	if err := os.MkdirAll(filepath.Dir(fpath), 0o755); err != nil {
+		return err
 	}
-	album := track.Info.Album
-	if album == "" {
-		album = "Unknown Album"
-	}
-	title := track.Info.Title
-	if title == "" {
-		if track.Filename != "" {
-			title = track.Filename
-		} else {
-			title = "Untitled"
-		}
-	}
-	var num string
-	if track.Disc != 0 && track.Number != 0 {
-		num = fmt.Sprintf("%d-%02d ", track.Disc, track.Number)
-	} else if track.Number != 0 {
-		num = fmt.Sprintf("%02d ", track.Number)
-	}
-	filename := scrub(num + title + track.Ext())
 
-	dir := filepath.Join(rootPath, scrub(artist), scrub(album))
-	os.MkdirAll(dir, os.ModePerm)
-	fpath := filepath.Join(dir, filename)
-
-	if ok, err := shouldSkip(fpath, track.ID); ok && err == nil {
+	hash := track.ContentHash
+	if hash == "" {
+		hash = track.ID
+	}
+	if ok, err := shouldSkip(fpath, hash); ok && err == nil {
 		return ErrSkip
 	} else if err != nil {
 		return err
@@ -212,13 +213,19 @@ func download(track tube.Track) error {
 
 	dlURL := track.DL
 	if dlURL == "" {
-		dlURL = *host + href
+		dlURL = track.FileURL()
+	}
+	if strings.HasPrefix(dlURL, "/") {
+		dlURL = *host + dlURL
 	}
 	resp, err := client.Get(dlURL)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s: %s", track.ID, resp.Status)
+	}
 
 	f, err := os.Create(fpath)
 	if err != nil {
@@ -227,43 +234,6 @@ func download(track tube.Track) error {
 	defer f.Close()
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return err
-	}
-	return nil
-}
-
-func post(path string, in interface{}, out interface{}) error {
-	href := *host + path
-
-	var inRdr io.Reader
-	if in != nil {
-		inraw, err := json.Marshal(in)
-		if err != nil {
-			return err
-		}
-		inRdr = bytes.NewReader(inraw)
-	}
-
-	resp, err := client.Post(href, "application/json", inRdr)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	// fmt.Println("got:", string(body))
-
-	if resp.StatusCode == 500 {
-		return fmt.Errorf("%s", strings.TrimPrefix(string(body), "Panic! "))
-	}
-
-	if out != nil {
-		if err := json.Unmarshal(body, out); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -282,10 +252,11 @@ func get(path string, out interface{}) error {
 		return err
 	}
 
-	// fmt.Println("got:", string(body))
-
-	if resp.StatusCode == 500 {
-		return fmt.Errorf("%s", strings.TrimPrefix(string(body), "Panic! "))
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		return errWrongLogin
+	case resp.StatusCode != http.StatusOK:
+		return fmt.Errorf("%s: %s", path, resp.Status)
 	}
 
 	if out != nil {
@@ -326,18 +297,6 @@ func sha1Sum(r io.ReadSeeker) (string, error) {
 		return "", nil
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
-func scrub(name string) string {
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, "\\", "-")
-	name = strings.ReplaceAll(name, "...", "")
-	name = strings.ReplaceAll(name, "..", "")
-	const cutset = `<>:"|?*`
-	for _, chr := range cutset {
-		name = strings.ReplaceAll(name, string(chr), "")
-	}
-	return name
 }
 
 func displayName(track tube.Track) string {

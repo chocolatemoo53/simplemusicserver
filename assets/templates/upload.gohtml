@@ -4,38 +4,139 @@
 		{{render "_head" $}}
 		<title>{{tr "titleprefix"}}{{tr "upload_title"}}</title>
 		<style>
-			table {
-				width: 100%;
-				/*border: 1px solid black;*/
-				margin-top: 1em;
-				margin-bottom: 1em;
-				table-layout: fixed;
+			.uploads {
+				list-style: none;
+				margin: 0;
+				padding: 0;
 			}
-			table th {
-				text-align: left;
+			.upload-entry {
+				display: grid;
+				grid-template-columns: 24px minmax(0, 1fr) 44px;
+				align-items: center;
+				gap: 12px;
+				padding: 10px 0;
+				border-bottom: 1px solid var(--line-soft);
 			}
-			table tr :first-child {
-				width: 2em;
+			.track-icon {
+				display: flex;
+				color: var(--muted);
 			}
-
+			.track-icon .icon {
+				display: none;
+				width: 22px;
+				height: 22px;
+			}
+			.upload-entry:not([data-icon]) .icon-upload,
+			.upload-entry[data-icon="done"] .icon-check,
+			.upload-entry[data-icon="skip"] .icon-next,
+			.upload-entry[data-icon="error"] .icon-alert,
+			.upload-entry[data-icon="retry"] .icon-repeat {
+				display: block;
+			}
+			.upload-entry[data-icon="done"] .track-icon {
+				color: var(--accent);
+			}
+			.upload-entry[data-icon="error"] .track-icon {
+				color: var(--danger);
+			}
+			.track-main {
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+				min-width: 0;
+			}
+			.track-name {
+				overflow-wrap: anywhere;
+			}
+			.track-status {
+				font-size: 14px;
+				color: var(--muted);
+			}
 			.track-error {
-				color: red;
+				color: var(--danger);
 			}
 			.track-error:not(:empty) + progress {
 				display: none;
 			}
-
-			table tr :nth-child(3) {
-				width: 2em;
+			.track-progress {
+				display: block;
+				width: 100%;
+				height: 6px;
+				border: none;
+				border-radius: 999px;
+				background: var(--line);
+				accent-color: var(--accent);
+				-webkit-appearance: none;
+				appearance: none;
+			}
+			.track-progress::-webkit-progress-bar {
+				border-radius: 999px;
+				background: var(--line);
+			}
+			.track-progress::-webkit-progress-value {
+				border-radius: 999px;
+				background: var(--accent);
+			}
+			.track-progress::-moz-progress-bar {
+				border-radius: 999px;
+				background: var(--accent);
 			}
 			.track-edit a {
-				text-decoration: none;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: 44px;
+				height: 44px;
+				border-radius: var(--r-pill);
+				color: var(--text);
+			}
+			.track-edit a:hover {
+				background: var(--surface);
 			}
 			.track-edit a:not([href]) {
 				display: none;
 			}
-			.track-edit a[href] {
-				display: unset;
+			.dropzone {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 12px;
+				margin: 20px 0;
+				padding: 36px 24px;
+				border: 2px dashed var(--control);
+				border-radius: var(--r);
+				background: var(--surface);
+				text-align: center;
+			}
+			.dropzone.dragging {
+				border-color: var(--accent);
+				background: var(--accent-soft);
+			}
+			.dropzone > .icon {
+				width: 40px;
+				height: 40px;
+				color: var(--accent);
+			}
+			.dropzone h2 {
+				margin: 0;
+			}
+			.dropzone p {
+				margin: 0;
+				color: var(--muted);
+			}
+			.dropzone .actions {
+				display: flex;
+				flex-wrap: wrap;
+				justify-content: center;
+				gap: 10px;
+				margin-top: 4px;
+			}
+			.dropzone .skip {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				font-size: 15px;
+				color: var(--muted);
 			}
 		</style>
 	</head>
@@ -44,22 +145,35 @@
 		<main>
 			<h2>{{tr "upload_title"}}</h2>
 			<p>{{tr "upload_intro"}}</p>
-			<p>{{tr "currentusage"}}: <b>{{$.User.Usage | bytesize}}</b> / {{tr "quota"}}: <b>{{$.User.CalcQuota | bytesize}} ({{$.User.UsageDesc}}%)</b></p>
-			{{if $.User.StorageFull}}
+			<p>{{tr "currentusage"}}: <b>{{$.User.Usage | bytesize}}</b> · {{tr "buy_monthly"}}: <b>{{$.User.MonthlyCost}}</b></p>
+			{{render "_standing" $}}
+			{{if (not (canupload $.User))}}
+				{{if $.User.NeedsVerification}}
 				<p class="error-msg">
-					⚠️ <b>{{tr "upload_full"}}</b><br>
-					{{tr "upload_fullexplain"}}<br>
-					{{tr "upload_cant"}}
+					<b>{{tr "verify_needed"}}</b><br>
+					{{tr "verify_needed_explain" $.User.Email}}<br>
+					<a href="/settings#email">{{tr "verify_resend_link"}}</a>
 				</p>
+				{{else}}
+				<p class="error-msg">
+					<b>{{tr "upload_full"}}</b><br>
+					{{tr "upload_fullexplain" (pricing.FreeBytes | bytesize)}}<br>
+					<a href="/buy/">{{tr "upload_cant"}}</a>
+				</p>
+				{{end}}
 			{{end}}
-			<div>
-				<form method="post" action="/upload/track" enctype="multipart/form-data" id="file-upload-form" onsubmit="return uploadFile(),false;">
-					<label for="file-input"><b>{{tr "upload_label"}}</b>:
-					<input type="file" name="file" id="file-input" accept=".mp3,.flac,audio/flac,audio/x-flac,.m4a" multiple> <input type="submit" id="file-upload-button" value='{{tr "upload_button"}}'> <br>
-					<label for="file-enabledir">{{tr "enabledirectories"}}:</label> <input type="checkbox" id="file-enabledir" onchange="return enableDirectories(this),false;"><br>
-					<label for="file-skipdupe">{{tr "upload_skipdupe"}}:</label> <input type="checkbox" id="file-skipdupe" checked><br>
-				</form>
-			</div>
+			<section class="dropzone" id="dropzone" aria-labelledby="dropzone-title">
+				{{render "_icon" "upload"}}
+				<h2 id="dropzone-title">{{tr "upload_drop"}}</h2>
+				<p>{{tr "upload_formats"}}</p>
+				<div class="actions">
+					<button type="button" class="btn-primary" onclick="document.getElementById('file-input').click();">{{render "_icon" "plus"}}{{tr "upload_choose_files"}}</button>
+					<button type="button" onclick="document.getElementById('dir-input').click();">{{render "_icon" "folder"}}{{tr "upload_choose_folder"}}</button>
+				</div>
+				<input type="file" id="file-input" accept=".mp3,.flac,audio/flac,audio/x-flac,.m4a" multiple hidden onchange="uploadChosen(this);">
+				<input type="file" id="dir-input" webkitdirectory directory multiple hidden onchange="uploadChosen(this);">
+				<label class="skip"><input type="checkbox" id="file-skipdupe" checked> {{tr "upload_skipdupe"}}</label>
+			</section>
 
 			<hr>
 
@@ -70,28 +184,18 @@
 				<span id="stat-pending">0</span> pending
 			</p>
 
-			<table>
-				<thead>
-					<tr>
-						<th>&nbsp;</th>
-						<th>track</th>
-						<th></th>
-						<th>progress</th>
-					</tr>
-				</thead>
-				<tbody id="upload-tracks">
-					<!-- tracks go here -->
-				</tbody>
-			</table>
+			<ul id="upload-tracks" class="uploads" aria-label='{{tr "upload_list"}}'></ul>
 		</main>
 
 		<template id="upload-track">
-			<tr class="upload-entry">
-				<td class="track-icon">⏳</td>
-				<td class="track-name"></td>
-				<td class="track-edit"><a target="_blank" title="edit track metadata">📝</a></td>
-				<td class="track-status"><span class="track-error"></span><progress class="track-progress" value="0" max="100"></progress></td>
-			</tr>
+			<li class="upload-entry">
+				<span class="track-icon">{{render "_icon" "upload"}}{{render "_icon" "check"}}{{render "_icon" "next"}}{{render "_icon" "alert"}}{{render "_icon" "repeat"}}</span>
+				<span class="track-main">
+					<span class="track-name"></span>
+					<span class="track-status"><span class="track-error"></span><progress class="track-progress" value="0" max="100" aria-label='{{tr "upload_progress"}}'></progress></span>
+				</span>
+				<span class="track-edit"><a target="_blank" title='{{tr "player_edit"}}' aria-label='{{tr "player_edit"}}'>{{render "_icon" "edit"}}</a></span>
+			</li>
 		</template>
 
 		<script>
@@ -120,13 +224,22 @@
 			}
 		}
 
+		var DROPZONE = document.getElementById("dropzone");
+		var DRAG_TIMER = null;
+
 		function uploadDragover(event) {
 			event.preventDefault();
+			DROPZONE.classList.add("dragging");
+			clearTimeout(DRAG_TIMER);
+			DRAG_TIMER = setTimeout(function() {
+				DROPZONE.classList.remove("dragging");
+			}, 150);
 		}
 		document.addEventListener("dragover", uploadDragover, true);
 
 		function uploadDrop(event) {
 			event.preventDefault();
+			DROPZONE.classList.remove("dragging");
 
 			var items = event.dataTransfer.items;
 			if (items && items.length > 0) {
@@ -160,37 +273,14 @@
 		}
 		document.addEventListener("drop", uploadDrop, true);
 
-		function enableDirectories(elem) {
-			var input = document.getElementById("file-input");
-			input.webkitdirectory = elem.checked;
-			input.directory = elem.checked;
-			input.click();
-		}
-
-		function uploadFile(event) {
-			var btn = document.getElementById("file-upload-button");
-			var form = document.getElementById("file-upload-form");
-			var files = document.getElementById("file-input").files;
-
-			btn.disabled = true;
-			btn.value = "{{tr "uploading"}}...";
-
-			[].forEach.call(files, function(file) {
+		function uploadChosen(input) {
+			[].forEach.call(input.files, function(file) {
+				if (input.id == "dir-input" && !/\.(mp3|flac|m4a)$/i.test(file.name)) {
+					return;
+				}
 				uploadTrack(file);
-				return;
-				// TODO:
-				// if (isImageFile(file)) {
-				// 	uploadImage(file, reply);
-				// } else {
-				// 	uploadTrack(file, reply);
-				// }
 			});
-
-			form.reset();
-			btn.disabled = false;
-			btn.value = "{{tr "upload_button"}}";
-
-			return false;
+			input.value = "";
 		}
 
 		function uploadFolder(dir) {
@@ -261,7 +351,6 @@
 					setError(pseudoID, "Upload error: " + (resp || "connection error"));
 					if (canRetry(status, resp)) {
 						if (resp == null) {
-							// called from xhr.onerror
 							resp = "connection error";
 						}
 						file.retries = (file.retries || 0) + 1;
@@ -327,7 +416,6 @@
 
 		function canRetry(status, response) {
 			if (status == -1) {
-				// connection error
 				return true;
 			}
 			if (status >= 500 && status < 600) {
@@ -359,13 +447,7 @@
 			}
 			xhr.onload = function() {
 				if (xhr.status == 200) {
-					// var b2info = JSON.parse(xhr.response);
-					var b2info = {
-						tubeID: fileID,
-						b2ID: xhr.getResponseHeader("x-amz-version-id")
-					};
-					console.log("b2", b2info);
-					finishS3Upload(b2info, undefined, job);
+					finishS3Upload({tubeID: fileID}, undefined, job);
 				} else {
 					console.log("b2 upload error:", xhr.status, xhr.response);
 					if (canRetry(xhr.status, xhr.response)) {
@@ -380,7 +462,6 @@
 				}
 			}
 			xhr.onerror = function() {
-				// retry
 				uploadTrack(file, meta.pseudoID, true);
 				return;
 			}
@@ -393,11 +474,9 @@
 
 		function finishS3Upload(info, retries, job) {
 			var fileID = info.tubeID;
-			var b2ID = info.b2ID;
-			console.log("up finish: ", fileID, b2ID);
 
 			var xhr = new XMLHttpRequest();
-			xhr.open("POST", UPLOAD_API + "/" + fileID + "?bid=" + b2ID);
+			xhr.open("POST", UPLOAD_API + "/" + fileID);
 			xhr.onload = function() {
 				if (xhr.status == 200) {
 					setProgress(fileID, 100);
@@ -407,17 +486,14 @@
 					console.log("job success", job.pseudoID);
 					incStat("success");
 				} else if (xhr.status == 202) {
-					//setProgress(fileID, -1);
 					console.log("file queued serverside...", fileID);
 					var msg = "";
 					var status = xhr.getResponseHeader("Tube-Upload-Status");
 					if (status) {
 						msg = status;
 					}
-					//setStatusMsg(fileID, msg);
 					setTimeout(finishS3Upload, RETRY_DELAY * 10, info, retries, job);
 				} else {
-					// setProgress(fileID, -1);
 					setError(fileID, xhr.response);
 					if (canRetry(xhr.status, xhr.response)) {
 						retries = (retries || 0) + 1;
@@ -446,7 +522,7 @@
 			var table = document.getElementById("upload-tracks");
 			var tmpl = document.getElementById("upload-track");
 			var track = tmpl.content.cloneNode(true);
-			var tr = track.querySelector("tr");
+			var tr = track.querySelector("li");
 			tr.dataset.filename = filename;
 			tr.dataset.pseudo = pseudoID;
 			tr.dataset.status = "uploading";
@@ -462,7 +538,7 @@
 				var table = document.getElementById("upload-tracks");
 				var tmpl = document.getElementById("upload-track");
 				track = tmpl.content.cloneNode(true);
-				track.querySelector("tr").id = id;
+				track.querySelector("li").id = id;
 				track.querySelector(".track-name").textContent = name;
 				table.appendChild(track);
 			}
@@ -488,7 +564,7 @@
 				}
 			}
 			if (progress == 100) {
-				track.querySelector(".track-icon").textContent = "✔️"
+				track.dataset.icon = "done";
 				track.dataset.status = "success";
 			}
 		}
@@ -503,8 +579,8 @@
 			var bar = track.querySelector(".track-progress");
 			bar.setAttribute("value", 100);
 
-			track.querySelector(".track-icon").textContent = "⏭️"
-			track.querySelector(".track-status").textContent = "skipped (duplicate)";
+			track.dataset.icon = "skip";
+			track.querySelector(".track-status").textContent = "{{tr "upload_skipped"}}";
 			track.dataset.status = "success";
 		}
 
@@ -517,8 +593,8 @@
 				console.log("no track:", id);
 				return;
 			}
-			track.querySelector(".track-error").textContent = "error: " + errormsg;
-			track.querySelector(".track-icon").textContent = "❌";
+			track.querySelector(".track-error").textContent = "{{tr "upload_error"}}: " + errormsg;
+			track.dataset.icon = "error";
 			track.dataset.status = "failed";
 		}
 
@@ -532,7 +608,7 @@
 				return;
 			}
 			track.querySelector(".track-error").textContent = "";
-			track.querySelector(".track-icon").textContent = "🙏";
+			track.dataset.icon = "retry";
 		}
 
 		function setMetadata(id, meta) {

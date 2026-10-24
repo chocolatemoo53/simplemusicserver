@@ -16,10 +16,9 @@ type SSID struct {
 type SSIDKind rune
 
 const (
-	SSIDArtist SSIDKind = 'A'
-	SSIDAlbum  SSIDKind = 'a'
-	SSIDTrack  SSIDKind = 't'
-	// SSIDPlaylist SSIDKind = 'P'
+	SSIDArtist  SSIDKind = 'A'
+	SSIDAlbum   SSIDKind = 'a'
+	SSIDTrack   SSIDKind = 't'
 	SSIDFolder  SSIDKind = 'F'
 	SSIDInvalid SSIDKind = -1
 )
@@ -67,7 +66,6 @@ func ParseSSID(id string) SSID {
 	}
 	id = strings.Replace(id, "!", "-", 1)
 	if !strings.ContainsRune(id, '-') {
-		// special case: folders are integers...
 		if _, err := strconv.Atoi(id); err == nil {
 			return SSID{Kind: SSIDFolder, ID: id}
 		}
@@ -83,8 +81,6 @@ func ParseSSID(id string) SSID {
 		return SSID{Kind: SSIDAlbum, ID: rest}
 	case SSIDTrack:
 		return SSID{Kind: SSIDTrack, ID: rest}
-		// case SSIDPlaylist:
-		// 	return SSID{Kind: SSIDPlaylist, ID: rest}
 	}
 	return SSID{Kind: SSIDInvalid, ID: id}
 }

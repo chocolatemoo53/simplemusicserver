@@ -9,11 +9,12 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	mailer "github.com/guregu/intertube/email"
+	"github.com/guregu/intertube/storage"
 	"github.com/guregu/intertube/tube"
 )
 
@@ -31,6 +32,19 @@ func allowGuest(path ...string) func(ctx context.Context, w http.ResponseWriter,
 	}
 }
 
+func allowGuestPrefix(prefix string) func(ctx context.Context, w http.ResponseWriter, r *http.Request) context.Context {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) context.Context {
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			return withBypass(ctx, true)
+		}
+		return ctx
+	}
+}
+
+func appPasswordReadable(path string) bool {
+	return path == "/api/v0/tracks" || strings.HasPrefix(path, "/dl/tracks/")
+}
+
 func requireLogin(ctx context.Context, w http.ResponseWriter, r *http.Request) context.Context {
 	maybeRedir := func() context.Context {
 		if bypassFrom(ctx) {
@@ -44,12 +58,22 @@ func requireLogin(ctx context.Context, w http.ResponseWriter, r *http.Request) c
 		return subsonicAuth(ctx, w, r)
 	}
 
+	if email, secret, ok := r.BasicAuth(); ok && appPasswordReadable(r.URL.Path) {
+		user, failed := authenticatePassword(ctx, email, secret)
+		if failed != nil {
+			w.Header().Set("WWW-Authenticate", `Basic realm="music library", charset="UTF-8"`)
+			http.Error(w, "wrong e-mail or app password", http.StatusUnauthorized)
+			return nil
+		}
+		return withUser(ctx, user)
+	}
+
 	cookieAuth, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return maybeRedir()
 	}
 
-	sesh, err := tube.GetSession(ctx, cookieAuth.Value)
+	sesh, keys, err := tube.GetSession(ctx, cookieAuth.Value)
 	if err != nil {
 		for _, cookie := range expiredAuthCookies() {
 			http.SetCookie(w, cookie)
@@ -64,12 +88,10 @@ func requireLogin(ctx context.Context, w http.ResponseWriter, r *http.Request) c
 		}
 		return maybeRedir()
 	}
-
-	// if err := ensureStripeCustomer(ctx, &user); err != nil {
-	// 	panic(err)
-	// }
+	user.WithKeys(keys)
 
 	ctx = withUser(ctx, user)
+	ctx = withSession(ctx, sesh)
 	return ctx
 }
 
@@ -83,8 +105,8 @@ func redirectLogin(ctx context.Context, w http.ResponseWriter, r *http.Request) 
 
 func requireAdmin(ctx context.Context, w http.ResponseWriter, r *http.Request) context.Context {
 	u, _ := userFrom(ctx)
-	if u.ID != 2 {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+	if !slices.Contains(AdminIDs, u.ID) {
+		http.NotFound(w, r)
 		return nil
 	}
 	return ctx
@@ -105,7 +127,7 @@ func loginForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	}
 
 	var data = loginFormData{
-		MailEnabled: mailer.IsEnabled(),
+		MailEnabled: mailEnabled(),
 	}
 
 	if rawJump := r.URL.Query().Get("r"); rawJump != "" {
@@ -115,14 +137,12 @@ func loginForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	renderTemplate(ctx, w, "login", data, http.StatusOK)
 }
 
-// TODO: friendly error messages
 func login(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	emailaddr := r.FormValue("email")
 	pass := r.FormValue("password")
 	jump := r.FormValue("jump")
 
 	if jump != "" && (jump[0] != '/' || strings.HasPrefix(jump, `//`)) {
-		log.Println("invalid jump:", jump)
 		jump = "/"
 	}
 	if jump == "" {
@@ -133,7 +153,7 @@ func login(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		data := loginFormData{
 			Email:       emailaddr,
 			Jump:        jump,
-			MailEnabled: mailer.IsEnabled(),
+			MailEnabled: mailEnabled(),
 			ErrorMsg:    msg,
 		}
 		renderTemplate(ctx, w, "login", data, http.StatusOK)
@@ -142,31 +162,59 @@ func login(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	user, err := tube.GetUserByEmail(ctx, emailaddr)
 	switch {
 	case errors.Is(err, tube.ErrNotFound):
-		renderError("error_no_user")
+		renderError("error_bad_login")
 		return
 	case err != nil:
 		panic(err)
 	}
 
-	if !user.ValidPassword(pass) {
-		renderError("error_bad_password")
+	var recovery string
+	err = user.Unlock(ctx, pass)
+	if errors.Is(err, tube.ErrNoKeys) {
+		recovery, err = user.SetupKeys(ctx, pass)
+	}
+	switch {
+	case errors.Is(err, tube.ErrWrongPassword):
+		renderError("error_bad_login")
 		return
+	case err != nil:
+		panic(err)
 	}
 
-	sesh, err := tube.CreateSession(ctx, user.ID, ipAddress(r))
+	sesh, err := tube.CreateSession(ctx, user)
 	if err != nil {
 		panic(err)
 	}
 
 	http.SetCookie(w, validAuthCookie(sesh))
+	if recovery != "" {
+		renderRecoveryKey(ctx, w, recovery, jump)
+		return
+	}
 	http.Redirect(w, r, jump, http.StatusSeeOther)
 }
 
 func logout(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(sessionCookie); err == nil {
+		if err := tube.DeleteSession(ctx, cookie.Value); err != nil {
+			log.Println("logout:", err)
+		}
+	}
 	for _, cookie := range expiredAuthCookies() {
 		http.SetCookie(w, cookie)
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func renderRecoveryKey(ctx context.Context, w http.ResponseWriter, recovery, next string) {
+	data := struct {
+		RecoveryKey string
+		Next        string
+	}{
+		RecoveryKey: recovery,
+		Next:        next,
+	}
+	renderTemplate(ctx, w, "recovery-key", data, http.StatusOK)
 }
 
 func registerForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -184,7 +232,6 @@ func register(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	pass := r.FormValue("password")
 	conf := r.FormValue("password-confirm")
-	// secret := r.FormValue("secret")
 	agree := r.FormValue("agree") == "on"
 
 	renderError := func(err error) {
@@ -193,8 +240,7 @@ func register(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 			Invite   string
 			ErrorMsg string
 		}{
-			Email: email,
-			// Invite:   secret,
+			Email:    email,
 			ErrorMsg: err.Error(),
 		}
 		renderTemplate(ctx, w, "register", data, http.StatusOK)
@@ -209,11 +255,6 @@ func register(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		renderError(fmt.Errorf("password and confirmation don't match"))
 		return
 	}
-
-	// if secret != registerSecret {
-	// 	renderError(fmt.Errorf("invalid invite code"))
-	// 	return
-	// }
 
 	if !agree {
 		renderError(fmt.Errorf("you must agree to the terms"))
@@ -230,30 +271,33 @@ func register(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pwhash, err := tube.HashPassword(pass)
+	if len(pass) < minPasswordLength {
+		renderError(fmt.Errorf("use a password of at least %d characters", minPasswordLength))
+		return
+	}
+
+	user = tube.User{Email: email}
+	recovery, err := user.Create(ctx, pass)
 	if err != nil {
 		renderError(err)
 		return
 	}
 
-	user = tube.User{
-		Email:    email,
-		Password: pwhash,
-	}
-	if err := user.Create(ctx); err != nil {
+	sesh, err := tube.CreateSession(ctx, user)
+	if err != nil {
 		renderError(err)
 		return
 	}
 
-	sesh, err := tube.CreateSession(ctx, user.ID, ipAddress(r))
-	if err != nil {
-		renderError(err)
-		return
+	if err := sendVerification(ctx, &user); err != nil {
+		log.Printf("verification mail for user %d: %v", user.ID, err)
 	}
 
 	http.SetCookie(w, validAuthCookie(sesh))
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	renderRecoveryKey(ctx, w, recovery, "/")
 }
+
+const minPasswordLength = 10
 
 func forgotForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	var data = struct {
@@ -274,9 +318,23 @@ func forgot(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		renderTemplate(ctx, w, "forgot", data, http.StatusOK)
 	}
 
+	sent := func() {
+		data := struct {
+			Email string
+		}{
+			Email: email,
+		}
+		renderTemplate(ctx, w, "forgot-sent", data, http.StatusOK)
+	}
+
+	if ok, _ := forgotPerMail.allow(strings.ToLower(strings.TrimSpace(email)), time.Now()); !ok {
+		sent()
+		return
+	}
+
 	u, err := tube.GetUserByEmail(ctx, email)
 	if err == tube.ErrNotFound {
-		renderError(fmt.Errorf("there is no account with that e-mail address"))
+		sent()
 		return
 	}
 	if err != nil {
@@ -284,115 +342,121 @@ func forgot(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := u.SetRandomRecovery(ctx); err != nil {
+	token, err := u.StartRecovery(ctx)
+	if err != nil {
 		renderError(err)
 		return
 	}
 
 	subject := fmt.Sprintf("Password reset for %s", Domain)
-	url := fmt.Sprintf("https://%s/recover?id=%d&token=%s", Domain, u.ID, u.Recovery)
-	body := fmt.Sprintf(`A password reset for your account %s at %s has been requested. <br>
-	Please use the following link to change your password: <br>
-	<a href="%s">%s</a> <br>
-	If you did not request this, you may ignore it.`, u.Email, Domain, url, url)
+	url := fmt.Sprintf("https://%s/recover?id=%d&token=%s", Domain, u.ID, token)
+	body := fmt.Sprintf("A password reset was requested for your account %s at %s.\n\n"+
+		"Use this link within the next hour to choose a new password:\n%s\n\n"+
+		"If you didn't request this, you can ignore this e-mail.\n", u.Email, Domain, url)
 
-	if err := mailer.Send(Domain+" Account", u.Email, subject, body); err != nil {
-		renderError(err)
+	if err := sendMail(u, subject, body); err != nil {
+		log.Println("password reset mail:", err)
+		renderError(fmt.Errorf("could not send the e-mail, please try again later"))
 		return
 	}
+	sent()
+}
 
-	data := struct {
-		Email string
-	}{
-		Email: email,
+type recoverFormData struct {
+	UserID   int
+	Token    string
+	Email    string
+	ErrorMsg string
+}
+
+func recoveryUser(ctx context.Context, userID int, token string) (tube.User, bool) {
+	u, err := tube.GetUser(ctx, userID)
+	if err != nil || !u.ValidRecovery(token, time.Now()) {
+		return tube.User{}, false
 	}
-	renderTemplate(ctx, w, "forgot-sent", data, http.StatusOK)
+	return u, true
 }
 
 func recoverForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
 	token := r.URL.Query().Get("token")
-
-	u, err := tube.GetUser(ctx, id)
-	if err != nil {
-		panic(err)
+	u, ok := recoveryUser(ctx, id, token)
+	if !ok {
+		http.Error(w, "this reset link is invalid or has already been used", http.StatusNotFound)
+		return
 	}
-
-	if u.Recovery == "" || u.Recovery != token {
-		panic("invalid token")
-	}
-
-	var data = struct {
-		UserID   int
-		Token    string
-		Email    string
-		ErrorMsg string
-	}{
-		UserID: id,
-		Token:  token,
-		Email:  u.Email,
-	}
-
-	renderTemplate(ctx, w, "recover", data, http.StatusOK)
+	renderTemplate(ctx, w, "recover", recoverFormData{UserID: id, Token: token, Email: u.Email}, http.StatusOK)
 }
+
+const startOverConfirmation = "delete my library"
 
 func doRecover(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	userID, _ := strconv.Atoi(r.FormValue("userid"))
 	token := r.FormValue("token")
 	pass := r.FormValue("password")
 	conf := r.FormValue("password-confirm")
-	email := r.FormValue("email")
+	recoveryKey := strings.TrimSpace(r.FormValue("recovery-key"))
+	startOver := strings.EqualFold(strings.TrimSpace(r.FormValue("start-over")), startOverConfirmation)
 
+	u, ok := recoveryUser(ctx, userID, token)
+	if !ok {
+		http.Error(w, "this reset link is invalid or has already been used", http.StatusNotFound)
+		return
+	}
 	renderError := func(err error) {
-		var data = struct {
-			Email    string
-			Token    string
-			UserID   int
-			ErrorMsg string
-		}{
-			Email:    email,
-			Token:    token,
-			UserID:   userID,
-			ErrorMsg: err.Error(),
+		renderTemplate(ctx, w, "recover", recoverFormData{UserID: userID, Token: token, Email: u.Email, ErrorMsg: err.Error()}, http.StatusOK)
+	}
+
+	switch {
+	case pass != conf:
+		renderError(fmt.Errorf("password and confirmation don't match"))
+		return
+	case len(pass) < minPasswordLength:
+		renderError(fmt.Errorf("use a password of at least %d characters", minPasswordLength))
+		return
+	}
+
+	var newRecovery string
+	switch {
+	case recoveryKey != "":
+		err := u.RecoverWithKey(ctx, recoveryKey, pass)
+		if errors.Is(err, tube.ErrWrongRecoveryKey) {
+			renderError(fmt.Errorf("that recovery key doesn't match this account"))
+			return
 		}
-		renderTemplate(ctx, w, "recover", data, http.StatusOK)
+		if err != nil {
+			panic(err)
+		}
+	case startOver:
+		recovery, objects, err := u.StartOver(ctx, pass)
+		if err != nil {
+			panic(err)
+		}
+		deleteObjects(ctx, u.ID, objects)
+		newRecovery = recovery
+	default:
+		renderError(fmt.Errorf("enter your recovery key, or type %q to start over with an empty library", startOverConfirmation))
+		return
 	}
 
-	u, err := tube.GetUser(ctx, userID)
+	sesh, err := tube.CreateSession(ctx, u)
 	if err != nil {
-		renderError(err)
-		return
+		panic(err)
 	}
-
-	if u.Recovery == "" || u.Recovery != token {
-		renderError(fmt.Errorf("invalid recovery token"))
-		return
-	}
-
-	if pass != conf {
-		renderError(fmt.Errorf("password and confirmation don't match"))
-		return
-	}
-
-	pwhash, err := tube.HashPassword(pass)
-	if err != nil {
-		renderError(fmt.Errorf("password and confirmation don't match"))
-		return
-	}
-
-	if err := u.SetPassword(ctx, pwhash); err != nil {
-		renderError(err)
-		return
-	}
-
-	sesh, err := tube.CreateSession(ctx, u.ID, ipAddress(r))
-	if err != nil {
-		renderError(err)
-		return
-	}
-
 	http.SetCookie(w, validAuthCookie(sesh))
+	if newRecovery != "" {
+		renderRecoveryKey(ctx, w, newRecovery, "/")
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func deleteObjects(ctx context.Context, userID int, objects []string) {
+	for _, key := range objects {
+		if err := storage.Delete(ctx, key); err != nil {
+			log.Printf("deleting object %s for user %d: %v", key, userID, err)
+		}
+	}
 }
 
 func validAuthCookie(sesh tube.Session) *http.Cookie {
@@ -413,37 +477,23 @@ func validAuthCookie(sesh tube.Session) *http.Cookie {
 }
 
 func expiredAuthCookies() []*http.Cookie {
-	domain := "." + Domain
-	if DebugMode {
-		domain = ""
-	}
-	return []*http.Cookie{
-		{
-			Name:     sessionCookie,
-			Domain:   "." + domain,
-			Path:     "/",
-			Value:    "",
-			Expires:  time.Now().Add(-10000 * time.Hour),
-			SameSite: http.SameSiteLaxMode,
-			HttpOnly: true,
-			Secure:   !DebugMode,
-		},
-		{
+	expired := func(domain string) *http.Cookie {
+		return &http.Cookie{
 			Name:     sessionCookie,
 			Domain:   domain,
 			Path:     "/",
 			Value:    "",
-			Expires:  time.Now().Add(-10000 * time.Hour),
+			MaxAge:   -1,
 			SameSite: http.SameSiteLaxMode,
 			HttpOnly: true,
 			Secure:   !DebugMode,
-		},
+		}
 	}
-}
-
-// TODO: don't use this if not behind load balancer
-func ipAddress(r *http.Request) string {
-	return r.Header.Get("X-Forwarded-For")
+	cookies := []*http.Cookie{expired("")}
+	if !DebugMode && Domain != "" {
+		cookies = append(cookies, expired("."+Domain))
+	}
+	return cookies
 }
 
 func encodeRedirect(href *url.URL) string {

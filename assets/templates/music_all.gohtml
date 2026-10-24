@@ -1,21 +1,17 @@
 <table id="playlist" {{with $.Next}} data-next="{{.}}" {{end}}>
 	<thead>
 		<tr>
-			<th class="track-status">&nbsp;</th>
+			<th class="track-status"><span class="visually-hidden">{{tr "player_play"}}</span></th>
 			<th class="track-artist sort-row">
-				<!-- {{tr "artist"}} -->
-				<!-- <a href="/music?sort={{if (and (eq $.Sort "artist") (not $.Reverse))}}-{{end}}artist" onmouseover="prefetch(this);" onclick="return visit(this),false;" {{if (eq $.Sort "artist")}} class="active" {{end}} data-reverse="{{$.Reverse}}">{{tr "artist"}}</a> -->
 				<a href="/music?sort={{if (and (eq $.Sort "artist") (not $.Reverse))}}-{{end}}artist" onclick="return toggleSort(this),false;" {{if (eq $.Sort "artist")}} class="active" {{end}} data-order="artist" data-reverse="{{(and (eq $.Sort "artist") $.Reverse)}}">{{tr "artist"}}</a>
 			</th>
 			<th class="track-album sort-row">
-				<!-- {{tr "album"}} -->
 				<a href="/music?sort={{if (and (eq $.Sort "album") (not $.Reverse))}}-{{end}}album" onclick="return toggleSort(this),false;" {{if (eq $.Sort "album")}} class="active" {{end}} data-order="album" data-reverse="{{(and (eq $.Sort "album") $.Reverse)}}">{{tr "album"}}</a>
 			</th>
 			<th class="track-title sort-row">
-				<!-- {{tr "title"}} -->
 				<a href="/music?sort={{if (and (eq $.Sort "title") (not $.Reverse))}}-{{end}}title" onclick="return toggleSort(this),false;" {{if (eq $.Sort "title")}} class="active" {{end}} data-order="title" data-reverse="{{(and (eq $.Sort "title") $.Reverse)}}">{{tr "title"}}</a>
 			</th>
-			<th class="track-pic"><!--{{tr "cover"}}--></th>
+			<th class="track-pic"><span class="visually-hidden">{{tr "cover"}}</span></th>
 		</tr>
 	</thead>
 	<tbody id="tracks-list" class="meat" data-sort="{{$.Sort}}" data-reverse="{{$.Reverse}}">
@@ -29,13 +25,13 @@
 				onclick="return toggleTrack('{{.ID}}', arguments[0]),false;">
 				<td class="track-status">
 					<span class="status-stopped">
-						<a tabindex=0 onclick="arguments[0].stopPropagation();return playTrack('{{.ID}}', false, arguments[0]),false;">
-							<span class="play-fresh">▶️</span>
-							<span class="play-resume">↪️</span>
+						<a tabindex=0 role="button" aria-label='{{tr "player_play"}}' onclick="arguments[0].stopPropagation();return playTrack('{{.ID}}', false, arguments[0]),false;">
+							<span class="play-fresh" title='{{tr "player_play"}}'>{{render "_icon" "play"}}</span>
+							<span class="play-resume" title='{{tr "btn_resume"}}'>{{render "_icon" "resume"}}</span>
 						</a>
 					</span>
 					<span class="status-playing">
-						<a tabindex=0 onclick="arguments[0].stopPropagation();return pauseTrack('{{.ID}}', false, arguments[0]),false;">⏸️</a>
+						<a tabindex=0 onclick="arguments[0].stopPropagation();return pauseTrack('{{.ID}}', false, arguments[0]),false;" role="button" title='{{tr "player_pause"}}' aria-label='{{tr "player_pause"}}'>{{render "_icon" "pause"}}</a>
 					</span>
 				</td>
 				<td class="track-artist">
@@ -46,7 +42,6 @@
 							{{.Info.AlbumArtist}}
 						{{end}}
 					</a>
-					<!-- TODO: composer -->
 				</td>
 				<td class="track-album">
 					<a tabindex="0" onclick="arguments[0].stopPropagation();return setFilter('album:{{.Album}}'),false;">
@@ -58,7 +53,7 @@
 				</td>
 				<td class="track-pic" onclick="arguments[0].stopPropagation();return setFilter('album:{{.Album}}'),false;">
 					{{if .Picture.ID}}
-						<img class="album-cover" alt="{{.Picture.Desc}}" src="{{.Picture.StorageKey | sign}}" loading="lazy">
+						<img class="album-cover" alt="{{.Picture.Desc}}" src="{{.Picture.URL}}" loading="lazy">
 					{{end}}
 				</td>
 			</tr>

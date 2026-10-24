@@ -3,50 +3,150 @@
 	<head>
 		{{render "_head" $}}
 		<title>{{tr "titleprefix"}}{{tr "privacy_title"}}</title>
+		<style>
+			main li {
+				margin-bottom: 0.4em;
+			}
+			main section {
+				margin-bottom: 1.5em;
+			}
+		</style>
 	</head>
 	<body>
 		{{render "_nav" $}}
+		{{$s := tr "service_name"}}
+		{{$p := pricing}}
 		<main>
 			<h2>{{tr "privacy_title"}}</h2>
-			<p>☛ see also: <a href="/terms">{{tr "tos_title"}}</a></p>
-			<p>We (inter.tube) strive to keep your personal information safe and secure. We won't sell or abuse your personal information.</p>
-			<h3>Personal information</h3>
-			<p>
+			<p><small>Last updated {{tr "privacy_updated"}} · See also: <a href="/terms">{{tr "tos_title"}}</a></small></p>
+			<p>{{$s}} collects as little about you as it can, keeps it safe, and never sells or abuses it.</p>
+
+			<section>
+				<h3>What's collected</h3>
 				<ul>
-					<li>We only store personal information (e-mail, IP address) strictly necessary for facilitating our service and protecting your account's security.</li>
-					<li>We will keep your personal information safe.</li>
-					<li>We partner with Stripe to process your payment information. This is securely handled by Stripe and not stored here.</li>
-					<li>We don't use third-party analytics.</li>
-					<li>We will never share your personal information with third-parties.</li>
-					<li>We will never provide your listening data to third-parties, unless you opt-in to scrobbling data (not yet implemented).</li>
+					<li>Your e-mail address, to run your account and send important service messages.</li>
+					<li>Your password, which is never stored in readable form.</li>
+					<li>Your library: files, covers, titles, lyrics, playlists and stars, all encrypted (see Encryption below).</li>
+					<li>Account records the service needs to run: your balance, payment history, storage used, and the number and size of your files. These aren't encrypted, so billing and cleanup can work without unlocking your library.</li>
+					<li>If you add one, your OpenPGP public key, so e-mails to you can be encrypted.</li>
+					<li>IP addresses are not stored, and there are no access logs. The server's error logs identify accounts only by an internal number, and they're rotated within days.</li>
+					<li>There are no third-party analytics, trackers or ads of any kind.</li>
 				</ul>
-			</p>
-			<h3>Cookies</h3>
-			<p>
+			</section>
+
+			<section>
+				<h3>Encryption</h3>
 				<ul>
-					<li>We only use cookies strictly necessary for providing service.</li>
-					<!-- <li>Your content is served by CloudFlare which may set cookies to grant access to your content and prevent abuse.</li> -->
-					<li>We don't set any analytics, tracking, or advertising cookies.</li>
-					<li>The purchase page may use a cookie from Stripe to prevent fraud.</li>
+					<li>Your files, covers, titles, lyrics, playlists and stars are encrypted on the server, including in backups and in the server's cache. Your library can only be unlocked while you or one of your devices is signed in, unless you create a compatibility app password (see below).</li>
+					<li>While you're connected, the server decrypts what you're using in memory, to process uploads and play your music. This is encryption at rest, not end-to-end encryption.</li>
+					<li>Login sessions and password reset links are stored only as hashes, so a leaked database can't be used to take over your account.</li>
+					<li>Your recovery key is shown once and never stored in readable form. Without your password or recovery key, your library can't be recovered.</li>
+					<li>App passwords are strict by default: a strict app password leaves nothing readable on the server. A compatibility app password works with more apps, but the server keeps a copy that can unlock your library. You choose which kind for each device.</li>
+					<li>Not encrypted: your e-mail address, balance and payment history, when you signed up and were last active, the number, size and upload times of your files, and the names you give your app passwords and the day each was last used.</li>
 				</ul>
-			</p>
-			<h3>E-mail</h3>
-			<p>
+			</section>
+
+			<section>
+				<h3>Payments</h3>
 				<ul>
-					<li>We only use your e-mail to provide your account and inform you of important service messages.</li>
-					<li>We don't use your e-mail for marketing or advertising. You may opt-in to an optional newsletter to receive updates about the site.</li>
-					<li>We provide your e-mail to Stripe to allow you to pay for the service and receive important messages regarding your payments and subscription.</li>
+					{{if payment}}
+					<li>Payments go through a BTCPay Server that {{$s}} runs itself. No outside payment company is involved, and no card or bank details are ever collected.</li>
+					{{else}}
+					<li>Payments are sent directly to {{$s}} and added to your balance by hand. Each one is recorded with its amount, date and a short note, such as a transaction ID, so it can be matched to your account. No outside payment company is involved, and no card or bank details are ever collected.</li>
+					{{end}}
+					<li>Each invoice is linked to your account so the payment can be added to your balance. The amount, time and transaction are kept as a payment record. Refunds are recorded the same way.</li>
+					<li>Bitcoin transactions are public. Anyone who knows a Bitcoin address can see its transactions on the blockchain. Monero transactions are private by design, so Monero is the better choice if payment privacy matters to you.</li>
 				</ul>
-			</p>
-			<h3>Security</h3>
-			<p>
+			</section>
+
+			<section>
+				<h3>E-mail</h3>
 				<ul>
-					<li>We store passwords with a secure hash function.</li>
-					<li>We don't store your financial information.</li>
-					<li>All communications go through HTTPS.</li>
-					<li>In the event of a data breach, affected users will be notified via e-mail.</li>
+					<li>Your e-mail is used only for your account and important service messages, such as password resets, balance reminders and notices about changes to the terms or your storage.</li>
+					<li>It's never used for marketing or advertising. E-mails are plain text, with no tracking pixels or tracked links.</li>
+					<li>E-mails are sent through {{tr "privacy_mail_provider"}}, which handles your address and the message only to deliver it.</li>
+					<li>If you add your OpenPGP public key in your settings, every e-mail to you is encrypted to it, so the e-mail provider only sees that a message was sent to you, not what it says. The subject line only reads "Encrypted message".</li>
 				</ul>
-			</p>
+			</section>
+
+			<section>
+				<h3>Cookies</h3>
+				<ul>
+					<li>The only cookie is the one that keeps you signed in and lets your library unlock while you use the site.</li>
+					<li>There are no analytics, tracking or advertising cookies.</li>
+					<li>The payment page is self-hosted too, so no outside company sets cookies there.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>Sharing</h3>
+				<ul>
+					<li>Your personal information is never sold, rented or shared for marketing.</li>
+					<li>A few providers help run the service and only receive what they need:
+						<ul>
+							<li>{{tr "privacy_hosting_provider"}} runs the servers.</li>
+							<li>{{tr "privacy_storage_provider"}} stores your files and the database backups, which are encrypted before they arrive.</li>
+							<li>{{tr "privacy_replica_provider"}} keeps a second copy of the same encrypted files{{with replicadelay}}, once you've kept them for {{.}} days{{end}}, and a daily encrypted copy of the database, so your library survives the loss of the main storage. Files you delete before then are never copied.</li>
+							<li>{{tr "privacy_mail_provider"}} delivers e-mails.</li>
+						</ul>
+					</li>
+					<li>Lyrics lookups are off unless you turn them on in your settings. When they're on and you open lyrics for a song that has none, the server sends that song's artist, title, album and length to <a href="https://lrclib.net">LRCLIB</a> to find them. The request comes from the server, not your device, and doesn't include your account, e-mail or IP address. LRCLIB still learns that someone on {{$s}} has that song. What it finds is stored encrypted with your library, so each song is looked up at most once a month.</li>
+					<li>Your listening data is never shared, unless you opt in to scrobbling once it's available. If you do, your play history is sent to the scrobbling service you choose, under that service's own privacy policy.</li>
+					<li>Apps you connect with an app password can access what you allow. They're run by other people and follow their own privacy policies.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>Retention and deletion</h3>
+				<ul>
+					<li>When you delete your account, your library and personal information are deleted right away. Copies in backups and in the second copy are erased within {{erasedays}} days. That copy is locked against deletion for a few days, so that neither an attacker nor a mistake can wipe every copy at once. Once the lock runs out, the deleted data is erased for good.</li>
+					<li>If your balance runs out, your library is kept for {{$p.LockDays}} days, with e-mail reminders, as described in the <a href="/terms">Terms of Service</a>. After that it's deleted.</li>
+					<li>Some records are deleted automatically:
+						<ul>
+							<li>login sessions after 7 days</li>
+							<li>password reset links after 1 hour</li>
+							<li>unfinished uploads after 24 hours</li>
+							<li>daily storage charges after 90 days</li>
+							<li>cached copies of deleted files immediately</li>
+						</ul>
+					</li>
+					<li>Payment and refund records are kept only as long as needed for accounting and legal requirements.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>Security</h3>
+				<ul>
+					<li>All connections use HTTPS.</li>
+					<li>Libraries are encrypted at rest, and passwords, session tokens, reset links and recovery keys are never stored in readable form.</li>
+					<li>If there's a data breach, affected users will be notified by e-mail as soon as possible. Because libraries are encrypted, leaked storage shouldn't expose their contents.</li>
+					<li>Found a vulnerability? Report it privately to {{tr "tos_security_contact"}}.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>Your rights</h3>
+				<ul>
+					<li>You can download your files and delete your account at any time, from your settings page.</li>
+					<li>To see, correct or delete the personal information held about you, e-mail {{tr "tos_contact"}}.</li>
+					<li>If you're in the EU or UK, you have rights under the GDPR, including the right to complain to your local data protection authority.</li>
+				</ul>
+			</section>
+
+			<section>
+				<h3>Legal requests</h3>
+				<p>Personal information is only handed over in response to valid legal process. Because libraries are encrypted, what can be provided is limited to your e-mail address, account records and encrypted data. The one exception is a library with a compatibility app password, which the server is able to unlock. Where the law allows, you'll be told about any request that concerns you.</p>
+			</section>
+
+			<section>
+				<h3>Changes</h3>
+				<p>Any meaningful change to this policy will be announced on the site and by e-mail at least 14 days before it takes effect.</p>
+			</section>
+
+			<section>
+				<h3>Contact</h3>
+				<p>{{$s}} is run by {{tr "tos_operator"}}. Questions about your privacy: {{tr "tos_contact"}}</p>
+			</section>
 		</main>
 		{{render "_foot" $}}
 	</body>

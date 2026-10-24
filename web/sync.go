@@ -11,7 +11,6 @@ import (
 func syncForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
 
-	// test lol
 	tracks, err := u.GetTracks(ctx)
 	if err != nil {
 		panic(err)
@@ -28,11 +27,11 @@ func syncForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	index := make(map[string]meta, len(lib.tracks))
 	for _, t := range lib.Tracks(organize{}) {
 		m := meta{
-			ID:      t.ID,
+			ID:      t.ContentHash,
 			Size:    t.Size,
 			LastMod: t.LocalMod,
 			Path:    t.VirtualPath(),
-			URL:     presignTrackDL(u, t),
+			URL:     t.FileURL(),
 		}
 		metadata = append(metadata, m)
 		index[m.ID] = m

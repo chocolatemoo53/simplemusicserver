@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+	<head>
+		{{render "_head" $}}
+		<title>{{tr "titleprefix"}}{{tr "verify_title"}}</title>
+	</head>
+	<body>
+		<main>
+			<h2>{{tr "verify_title"}}</h2>
+			{{if $.OK}}
+				<p>{{tr "verify_done"}}</p>
+				<p><a href="/upload">{{tr "verify_continue"}}</a></p>
+			{{else}}
+				<p class="error-msg">{{tr "verify_bad"}}</p>
+				<p><a href="/settings#email">{{tr "verify_resend_link"}}</a></p>
+			{{end}}
+		</main>
+	</body>
+</html>

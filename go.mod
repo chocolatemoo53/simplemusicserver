@@ -1,49 +1,52 @@
 module github.com/guregu/intertube
 
-go 1.23
+go 1.27
 
-toolchain go1.23.1
+toolchain go1.27.3
 
 require (
-	github.com/BurntSushi/toml v1.3.2
-	github.com/akrylysov/algnhsa v1.1.0
-	github.com/aws/aws-lambda-go v1.47.0
-	github.com/aws/aws-sdk-go v1.52.2
-	github.com/davecgh/go-spew v1.1.1
-	github.com/dustin/go-humanize v1.0.1
-	github.com/expr-lang/expr v1.16.5
-	github.com/fsnotify/fsnotify v1.7.0
-	github.com/guregu/dynamo v1.22.2
-	github.com/guregu/kami v2.2.1+incompatible
-	github.com/guregu/tag v0.0.2
+	github.com/BurntSushi/toml v1.6.0
+	github.com/ProtonMail/go-crypto v1.5.2
+	github.com/aws/aws-sdk-go-v2 v1.47.3
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
+	github.com/aws/smithy-go v1.28.5
+	github.com/dustin/go-humanize v1.1.0
+	github.com/expr-lang/expr v1.17.8
+	github.com/fsnotify/fsnotify v1.10.1
+	github.com/guregu/tag v0.0.3
 	github.com/hajimehoshi/go-mp3 v0.3.4
-	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
-	github.com/karlseguin/ccache/v2 v2.0.8
-	github.com/mewkiz/flac v1.0.10
-	github.com/nicksnyder/go-i18n/v2 v2.4.0
-	github.com/pelletier/go-toml/v2 v2.2.2
+	github.com/mewkiz/flac v1.0.14
+	github.com/nicksnyder/go-i18n/v2 v2.6.1
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/posener/order v0.0.1
-	github.com/stripe/stripe-go/v72 v72.122.0
-	golang.org/x/crypto v0.22.0
-	golang.org/x/net v0.24.0
-	golang.org/x/sync v0.7.0
-	golang.org/x/text v0.15.0
+	github.com/rs/cors v1.11.1
+	golang.org/x/crypto v0.58.0
+	golang.org/x/sync v0.24.0
+	golang.org/x/text v0.43.0
+	modernc.org/sqlite v1.60.1
 )
 
 require (
-	github.com/resend/resend-go/v2 v2.13.0 // indirect
-	google.golang.org/protobuf v1.34.0 // indirect
-)
-
-require (
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
-	github.com/dimfeld/httptreemux v5.0.1+incompatible // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.22 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.6 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.6 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.21 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.6 // indirect
+	github.com/cloudflare/circl v1.6.5 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/mewkiz/pkg v0.0.0-20240419123545-2c8707409a71 // indirect
-	github.com/rs/cors v1.11.0
-	github.com/zenazn/goji v1.0.1 // indirect
-	golang.org/x/sys v0.20.0 // indirect
-	google.golang.org/appengine v1.6.8 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/mewkiz/pkg v0.0.0-20260703220044-4fb89b18cc87 // indirect
+	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
+	github.com/ncruces/go-strftime v1.1.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/stretchr/testify v1.8.2 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	modernc.org/libc v1.77.1 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.12.1 // indirect
 )

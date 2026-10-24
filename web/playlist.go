@@ -3,8 +3,8 @@ package web
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/guregu/intertube/tube"
 )
@@ -15,14 +15,25 @@ func createPlaylistForm(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		panic(err)
 	}
+
+	var pl tube.Playlist
+	if idStr := r.PathValue("id"); idStr != "" {
+		if pid, err := strconv.Atoi(idStr); err == nil && pid > 0 {
+			if existing, err := u.GetPlaylist(ctx, pid); err == nil {
+				pl = existing
+			}
+		}
+	}
+
 	var tracks []tube.Track
 	query := r.FormValue("q")
+	if query == "" && pl.Dynamic && pl.Query != "" {
+		query = pl.Query
+	}
 	if query != "" {
-		var err error
-		tracks, err = lib.Query(query)
-		if err != nil {
-			panic(err)
-		}
+		tracks, _ = lib.Query(query)
+	} else if len(pl.Tracks) > 0 {
+		tracks = lib.TracksByID(pl.Tracks)
 	}
 
 	data := struct {
@@ -30,8 +41,9 @@ func createPlaylistForm(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		Query    string
 		Playlist tube.Playlist
 	}{
-		Tracks: tracks,
-		Query:  query,
+		Tracks:   tracks,
+		Query:    query,
+		Playlist: pl,
 	}
 
 	page := "playlist"
@@ -42,9 +54,6 @@ func createPlaylistForm(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	renderTemplate(ctx, w, page, data, http.StatusOK)
 }
 
-/*
-{"meta":{"playlist-name":"a","sort-by":"default","sort-order":"ascending"},"form":{"all":[{"inc":true,"attr":"Artist","op":"$1 == $2","val":"\"a\"","expr":"(Artist == \"a\")"}],"expr":"(Artist == \"a\")"}}
-*/
 type PlaylistRequest struct {
 	Meta struct {
 		Name      string
@@ -69,7 +78,6 @@ type PLUIMeta struct {
 	Ver   int
 }
 
-// TODO: static playlist
 func createPlaylist(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	const playlistVersion = 1
 
@@ -81,9 +89,50 @@ func createPlaylist(ctx context.Context, w http.ResponseWriter, r *http.Request)
 
 	var plr PlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&plr); err != nil {
-		panic(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	expr := plr.Form.Expr
+
+	tracks, err := lib.Query(expr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	enc, err := json.Marshal(PLUIMeta{
+		Conds: plr.Form.All,
+		Ver:   playlistVersion,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	idStr := r.PathValue("id")
+	var pid int
+	if idStr != "" {
+		pid, _ = strconv.Atoi(idStr)
+	}
+
+	if pid > 0 {
+		existing, err := u.GetPlaylist(ctx, pid)
+		if err != nil {
+			http.Error(w, "playlist not found", http.StatusNotFound)
+			return
+		}
+		existing.Name = plr.Meta.Name
+		existing.Dynamic = true
+		existing.Query = expr
+		existing.With(tracks)
+		existing.UIMeta = enc
+		if err := u.SavePlaylist(ctx, &existing); err != nil {
+			panic(err)
+		}
+		w.Header().Set("Location", "/music/playlists")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
 	pl := tube.Playlist{
 		UserID: u.ID,
@@ -91,29 +140,32 @@ func createPlaylist(ctx context.Context, w http.ResponseWriter, r *http.Request)
 
 		Dynamic: true,
 		Query:   expr,
-	}
-
-	// test out query
-	tracks, err := lib.Query(expr)
-	if err != nil {
-		panic(err)
+		UIMeta:  enc,
 	}
 	pl.With(tracks)
 
-	enc, err := json.Marshal(PLUIMeta{
-		Conds: plr.Form.All,
-		Ver:   playlistVersion,
-	})
-	if err != nil {
+	if err := u.CreatePlaylist(ctx, &pl); err != nil {
 		panic(err)
 	}
-	pl.UIMeta = enc
-
-	if err := pl.Create(ctx); err != nil {
-		panic(err)
-	}
-	w.Header().Set("Location", fmt.Sprintf("/playlist/%d", pl.ID))
+	w.Header().Set("Location", "/music/playlists")
 	w.WriteHeader(http.StatusCreated)
+}
+
+func deletePlaylist(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	u, _ := userFrom(ctx)
+	pid, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := u.DeletePlaylist(ctx, pid); err != nil {
+		if err == tube.ErrNotFound {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		panic(err)
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func playlistTracks(lib *Library, pl tube.Playlist) ([]tube.Track, error) {
@@ -124,6 +176,5 @@ func playlistTracks(lib *Library, pl tube.Playlist) ([]tube.Track, error) {
 	} else {
 		tracks = lib.TracksByID(pl.Tracks)
 	}
-	// TODO: SORT
 	return tracks, err
 }

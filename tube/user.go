@@ -2,6 +2,9 @@ package tube
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,304 +12,302 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const (
-	tableUsers   = "Users"
-	counterUsers = "Users"
-)
-
-var TrialDuration = 14 * time.Hour * 24
-
-const CurrentPhase = RegPhaseEarlyAccess
-
 type User struct {
-	ID       int    `dynamo:",hash"`
-	Email    string `index:"Email-index,hash"`
-	Password []byte `json:"-"`
-	Regdate  time.Time
-	Phase    RegPhase // phase at time of reg
-	Recovery string
+	ID              int
+	Email           string
+	Password        []byte `json:"-"`
+	Regdate         time.Time
+	Recovery        string
+	RecoveryExpires time.Time
+
+	EmailVerified time.Time
+	VerifyToken   string
+	VerifyExpires time.Time
 
 	Usage  int64
-	Quota  int64
 	Tracks int
 
-	CustomerID string `index:"CustomerID-index,hash"` // from stripe
-	Plan       PlanKind
-	PlanStatus PlanStatus // from stripe
-	PlanExpire time.Time  `dynamo:",omitempty"`
-	Canceled   bool
-	TrialOver  bool
+	Balance    Micros
+	LapsedAt   time.Time
+	Notified   int
+	NotifiedAt time.Time
+	Exempt     bool
 
 	Theme   string
 	Display DisplayOptions
 
-	B2Token  string
-	B2Expire time.Time `dynamo:",omitempty"`
+	PGPKey         string
+	PGPFingerprint string
 
-	LastMod  time.Time
-	LastDump time.Time `dynamo:",omitempty"`
+	LastMod time.Time
+
+	keys *Keyring
 }
 
 type DisplayOptions struct {
-	Stretch     bool
-	MusicLink   MusicLinkOpt
-	TrackSelect TrackSelOpt
+	Stretch      bool
+	TrackSelect  TrackSelOpt
+	LyricsLookup bool
 }
 
-func (u *User) Create(ctx context.Context) error {
+func (u *User) Create(ctx context.Context, password string) (string, error) {
 	if u.ID != 0 {
-		panic("trying to create pre-existing user")
+		return "", fmt.Errorf("user already exists: %d", u.ID)
 	}
-	now := time.Now().UTC()
-	u.Regdate = now
-	u.Phase = CurrentPhase
-	u.PlanExpire = now.Add(TrialDuration)
-	u.Plan = PlanKindNone
-	u.PlanStatus = PlanStatusTrialing
+	hashed, err := HashPassword(password)
+	if err != nil {
+		return "", err
+	}
+	u.Password = hashed
+	u.Regdate = time.Now().UTC()
 	u.Email = strings.ToLower(u.Email)
 
-	var err error
-	u.ID, err = NextID(ctx, counterUsers)
-	if err != nil {
+	var recovery string
+	err = inTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `INSERT INTO users (email, password, data) VALUES (?, ?, '{}')`, u.Email, u.Password)
+		if isUniqueViolation(err) {
+			return fmt.Errorf("e-mail already in use: %s", u.Email)
+		}
+		if err != nil {
+			return err
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		u.ID = int(id)
+		if err := saveUser(ctx, tx, *u); err != nil {
+			return err
+		}
+		u.keys, recovery, err = createKeys(ctx, tx, u.ID, password)
 		return err
+	})
+	if err != nil {
+		u.ID = 0
+		return "", err
 	}
-
-	users := dynamoTable(tableUsers)
-	err = users.Put(u).If("attribute_not_exists(ID)").Run()
-	return err
+	return recovery, nil
 }
 
 func (u *User) SetEmail(ctx context.Context, email string) error {
 	if email == "" {
 		return fmt.Errorf("blank email")
 	}
-
 	email = strings.ToLower(email)
-
-	_, err := GetUserByEmail(ctx, email)
-	if err == nil {
+	err := u.update(ctx, func(u *User) {
+		u.Email = email
+		u.EmailVerified = time.Time{}
+		u.VerifyToken = ""
+		u.VerifyExpires = time.Time{}
+		u.LastMod = time.Now().UTC()
+	})
+	if isUniqueViolation(err) {
 		return fmt.Errorf("e-mail already in use: %s", email)
 	}
-	if err != ErrNotFound {
-		return err
-	}
-
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("Email", email).
-		Set("LastMod", time.Now().UTC()).
-		Value(u)
+	return err
 }
 
-func (u *User) SetRandomRecovery(ctx context.Context) error {
-	code, err := randomString(69)
+const recoveryTTL = time.Hour
+
+func (u *User) StartRecovery(ctx context.Context) (string, error) {
+	token, err := randomString(48)
 	if err != nil {
-		return err
+		return "", err
 	}
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("Recovery", code).
-		Value(u)
+	err = u.update(ctx, func(u *User) {
+		u.Recovery = tokenHash(token)
+		u.RecoveryExpires = time.Now().UTC().Add(recoveryTTL)
+	})
+	return token, err
 }
 
-func (u *User) SetPassword(ctx context.Context, pw []byte) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("Password", pw).
-		Remove("Recovery").
-		Value(u)
+func (u User) ValidRecovery(token string, now time.Time) bool {
+	return u.Recovery != "" && now.Before(u.RecoveryExpires) && EqualSecret(u.Recovery, tokenHash(token))
+}
+
+var RequireVerifiedEmail bool
+
+var ErrBadVerifyToken = errors.New("invalid or expired verification link")
+
+const verifyTTL = 7 * 24 * time.Hour
+
+func (u User) Verified() bool {
+	return !u.EmailVerified.IsZero()
+}
+
+func (u User) NeedsVerification() bool {
+	return RequireVerifiedEmail && !u.Verified() && !u.Exempt
+}
+
+func (u *User) StartVerification(ctx context.Context) (string, error) {
+	token, err := randomString(48)
+	if err != nil {
+		return "", err
+	}
+	err = u.update(ctx, func(u *User) {
+		u.VerifyToken = tokenHash(token)
+		u.VerifyExpires = time.Now().UTC().Add(verifyTTL)
+	})
+	return token, err
+}
+
+func VerifyEmail(ctx context.Context, userID int, token string, now time.Time) error {
+	_, err := updateUser(ctx, userID, func(u *User) error {
+		if u.Verified() {
+			return nil
+		}
+		if u.VerifyToken == "" || !now.Before(u.VerifyExpires) || !EqualSecret(u.VerifyToken, tokenHash(token)) {
+			return ErrBadVerifyToken
+		}
+		u.EmailVerified = now.UTC()
+		u.VerifyToken = ""
+		u.VerifyExpires = time.Time{}
+		return nil
+	})
+	if errors.Is(err, ErrNotFound) {
+		return ErrBadVerifyToken
+	}
+	return err
 }
 
 func (u *User) UpdateLastMod(ctx context.Context) error {
 	now := time.Now().UTC().Truncate(time.Second)
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("LastMod", now).
-		Value(u)
-}
-
-func (u *User) UpdateLastDump(ctx context.Context, at time.Time) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("LastDump", at).
-		If("attribute_not_exists(LastDump) OR LastDump < ?", at).
-		Value(u)
-}
-
-func (u *User) SetB2Token(ctx context.Context, token string, expire time.Time) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("B2Token", token).
-		Set("B2Expire", expire).
-		Set("LastMod", time.Now().UTC()).
-		Value(u)
-}
-
-func (u *User) SetTracks(ctx context.Context, count int) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("Tracks", count).
-		Set("LastMod", time.Now().UTC()).
-		Value(u)
+	return u.update(ctx, func(u *User) {
+		u.LastMod = now
+	})
 }
 
 func (u *User) SetTheme(ctx context.Context, theme string) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("Theme", theme).
-		Set("LastMod", time.Now().UTC()).
-		Value(u)
+	return u.update(ctx, func(u *User) {
+		u.Theme = theme
+		u.LastMod = time.Now().UTC()
+	})
+}
+
+func (u *User) SetPGPKey(ctx context.Context, armored, fingerprint string) error {
+	return u.update(ctx, func(u *User) {
+		u.PGPKey = armored
+		u.PGPFingerprint = fingerprint
+	})
 }
 
 func (u *User) SetDisplayOpt(ctx context.Context, disp DisplayOptions) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("Display", disp).
-		Set("LastMod", time.Now().UTC()).
-		Value(u)
+	return u.update(ctx, func(u *User) {
+		u.Display = disp
+		u.LastMod = time.Now().UTC()
+	})
 }
 
-func (u *User) SetCustomerID(ctx context.Context, id string) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("CustomerID", id).
-		Set("LastMod", time.Now().UTC()).
-		Value(u)
+func (u *User) update(ctx context.Context, fn func(*User)) error {
+	updated, err := updateUser(ctx, u.ID, func(u *User) error {
+		fn(u)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	keys := u.keys
+	*u = updated
+	u.keys = keys
+	return nil
 }
 
-func (u *User) SetPlan(ctx context.Context, kind PlanKind, status PlanStatus, expires time.Time, canceled bool) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Set("Plan", kind).
-		Set("PlanStatus", status).
-		Set("PlanExpire", expires).
-		Set("LastMod", time.Now().UTC()).
-		Set("Canceled", canceled).
-		Set("TrialOver", true).
-		Value(u)
+func updateUser(ctx context.Context, id int, fn func(*User) error) (User, error) {
+	var out User
+	err := inTx(ctx, func(tx *sql.Tx) error {
+		u, err := updateUserTx(ctx, tx, id, fn)
+		out = u
+		return err
+	})
+	return out, err
 }
 
-func (u *User) DeletePaymentInfo(ctx context.Context) error {
-	users := dynamoTable(tableUsers)
-	return users.Update("ID", u.ID).
-		Remove("CustomerID").
-		Remove("Plan").
-		Remove("PlanStatus").
-		Remove("PlanExpire").
-		Remove("Canceled").
-		Remove("TrialOver").
-		Set("LastMod", time.Now().UTC()).
-		Value(u)
+func updateUserTx(ctx context.Context, tx *sql.Tx, id int, fn func(*User) error) (User, error) {
+	u, err := getUser(ctx, tx, "id = ?", id)
+	if err != nil {
+		return User{}, err
+	}
+	if err := fn(&u); err != nil {
+		return User{}, err
+	}
+	return u, saveUser(ctx, tx, u)
+}
+
+func saveUser(ctx context.Context, q querier, u User) error {
+	data, err := encode(u)
+	if err != nil {
+		return err
+	}
+	_, err = q.ExecContext(ctx, `UPDATE users SET email = ?, password = ?, data = ? WHERE id = ?`, u.Email, u.Password, data, u.ID)
+	return err
+}
+
+const userColumns = "id, email, password, data"
+
+func scanUser(s scanner) (User, error) {
+	var (
+		id             int
+		email          string
+		password, data []byte
+	)
+	if err := s.Scan(&id, &email, &password, &data); err != nil {
+		return User{}, notFound(err)
+	}
+	var u User
+	if err := json.Unmarshal(data, &u); err != nil {
+		return User{}, err
+	}
+	u.ID, u.Email, u.Password = id, email, password
+	return u, nil
+}
+
+func getUser(ctx context.Context, q querier, where string, args ...any) (User, error) {
+	return scanUser(q.QueryRowContext(ctx, "SELECT "+userColumns+" FROM users WHERE "+where, args...))
 }
 
 func (u User) ValidPassword(password string) bool {
 	return bcrypt.CompareHashAndPassword(u.Password, []byte(password)) == nil
 }
 
-func (u User) CalcQuota() int64 {
-	if u.Grandfathered() && u.Plan == PlanKindNone && u.Quota > 0 {
-		return u.Quota
-	}
-	return GetPlan(u.Plan).Quota
-}
-
-func (u User) UsageDesc() string {
-	if u.Usage == 0 {
-		return "0"
-	}
-	if u.CalcQuota() == 0 {
-		return "unlimited"
-	}
-	pct := float64(u.Usage) / float64(u.CalcQuota()) * 100
-	return fmt.Sprintf("%.2f", pct)
-}
-
-func (u User) Active() bool {
-	// TODO
-	if u.Grandfathered() {
-		return true
-	}
-	if !u.PlanStatus.Active() {
-		return false
-	}
-	return u.PlanExpire.After(time.Now())
-}
-
-func (u User) TimeRemaining() time.Duration {
-	if u.PlanExpire.IsZero() {
-		return 0
-	}
-	return time.Until(u.PlanExpire)
-}
-
-func (u User) Expired() bool {
-	return u.TimeRemaining() <= 0
-}
-
-func (u User) Grandfathered() bool {
-	return u.Phase == RegPhaseAlpha
-}
-
-func (u User) Trialing() bool {
-	return u.Plan == PlanKindNone
-}
-
-func (u User) StorageFull() bool {
-	return u.Usage >= u.CalcQuota()
-}
-
 func GetUser(ctx context.Context, id int) (User, error) {
-	users := dynamoTable(tableUsers)
-	var u User
-	err := users.Get("ID", id).Consistent(true).One(&u)
-	return u, err
+	return getUser(ctx, db, "id = ?", id)
 }
 
 func GetUserByEmail(ctx context.Context, email string) (User, error) {
-	email = strings.ToLower(email)
-	users := dynamoTable(tableUsers)
-	var u User
-	err := users.Get("Email", email).Index("Email-index").One(&u)
-	return u, err
-}
-
-func GetUserByCustomerID(ctx context.Context, id string) (User, error) {
-	users := dynamoTable(tableUsers)
-	var u User
-	err := users.Get("CustomerID", id).Index("CustomerID-index").One(&u)
-	return u, err
+	return getUser(ctx, db, "email = ?", strings.ToLower(email))
 }
 
 func GetAllUsers(ctx context.Context) ([]User, error) {
-	users := dynamoTable(tableUsers)
-	var u []User
-	err := users.Scan().All(&u)
-	return u, err
+	rows, err := db.QueryContext(ctx, "SELECT "+userColumns+" FROM users ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var users []User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
 }
 
 func AddUsage(ctx context.Context, id int, usage int64, trackCt int) (User, error) {
-	users := dynamoTable(tableUsers)
-	var u User
-	err := users.Update("ID", id).
-		Add("Usage", usage).
-		Add("Tracks", trackCt).
-		If("attribute_exists('ID')").Value(&u)
-	return u, err
+	return updateUser(ctx, id, addUsage(usage, trackCt))
+}
+
+func addUsage(usage int64, trackCt int) func(*User) error {
+	return func(u *User) error {
+		u.Usage += usage
+		u.Tracks += trackCt
+		return nil
+	}
 }
 
 func HashPassword(password string) ([]byte, error) {
 	return bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-}
-
-type MusicLinkOpt string
-
-const (
-	MusicLinkDefault MusicLinkOpt = ""
-	MusicLinkAlbums  MusicLinkOpt = "albums"
-)
-
-func (mlo MusicLinkOpt) String() string {
-	return string(mlo)
 }
 
 type TrackSelOpt string
@@ -319,10 +320,3 @@ const (
 func (tso TrackSelOpt) String() string {
 	return string(tso)
 }
-
-type RegPhase string
-
-const (
-	RegPhaseAlpha       RegPhase = ""
-	RegPhaseEarlyAccess RegPhase = "EA"
-)

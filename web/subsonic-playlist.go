@@ -50,7 +50,6 @@ func newSubsonicPlaylist(pl tube.Playlist, tracks []tube.Track, owner tube.User)
 }
 
 func subsonicGetPlaylists(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	// <playlist id="15" name="Some random songs" comment="Just something I tossed together" owner="admin" public="false" songCount="6" duration="1391" created="2012-04-17T19:53:44" coverArt="pl-15">
 	u, _ := userFrom(ctx)
 
 	resp := struct {
@@ -62,17 +61,12 @@ func subsonicGetPlaylists(ctx context.Context, w http.ResponseWriter, r *http.Re
 		subsonicResponse: subOK(),
 	}
 
-	pls, err := tube.GetPlaylists(ctx, u.ID)
+	pls, err := u.GetPlaylists(ctx)
 	if err != nil {
 		panic(err)
 	}
-	// lib, err := getLibrary(ctx, u)
-	// if err != nil {
-	// 	panic(err)
-	// }
 
 	for _, pl := range pls {
-		// tracks := lib.TracksById(pl.Tracks)
 		resp.Playlists.List = append(resp.Playlists.List, newSubsonicPlaylist(pl, nil, u))
 	}
 
@@ -81,7 +75,6 @@ func subsonicGetPlaylists(ctx context.Context, w http.ResponseWriter, r *http.Re
 
 func subsonicGetPlaylist(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
-	// id := tube.ParseSSID(r.FormValue("id"))
 	id, err := strconv.Atoi(r.FormValue("id"))
 	if err != nil {
 		panic(err)
@@ -91,7 +84,7 @@ func subsonicGetPlaylist(ctx context.Context, w http.ResponseWriter, r *http.Req
 	if err != nil {
 		panic(err)
 	}
-	pl, err := tube.GetPlaylist(ctx, u.ID, id)
+	pl, err := u.GetPlaylist(ctx, id)
 	if err == tube.ErrNotFound {
 		writeSubsonic(ctx, w, r, subErr(70, "The requested data was not found."))
 		return
@@ -118,7 +111,6 @@ func subsonicCreatePlaylist(ctx context.Context, w http.ResponseWriter, r *http.
 
 	r.ParseForm()
 	name := r.FormValue("name")
-	// pid := tube.ParseSSID(r.FormValue("playlistId"))
 	pid, _ := strconv.Atoi(r.FormValue("playlistId"))
 
 	var ids []string
@@ -140,12 +132,12 @@ func subsonicCreatePlaylist(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 
 	if pid != 0 {
-		pl, err := tube.GetPlaylist(ctx, u.ID, pid)
+		pl, err := u.GetPlaylist(ctx, pid)
 		if err != nil {
 			panic(err)
 		}
 		pl.With(tracks)
-		if err := pl.Save(ctx); err != nil {
+		if err := u.SavePlaylist(ctx, &pl); err != nil {
 			panic(err)
 		}
 		return
@@ -156,7 +148,7 @@ func subsonicCreatePlaylist(ctx context.Context, w http.ResponseWriter, r *http.
 		Name:   name,
 	}
 	pl.With(tracks)
-	if err := pl.Create(ctx); err != nil {
+	if err := u.CreatePlaylist(ctx, &pl); err != nil {
 		panic(err)
 	}
 
@@ -176,9 +168,7 @@ func subsonicUpdatePlaylist(ctx context.Context, w http.ResponseWriter, r *http.
 	r.ParseForm()
 	name := r.FormValue("name")
 	desc := r.FormValue("comment")
-	// TODO: public?
 
-	// pid := tube.ParseSSID(r.FormValue("playlistId"))
 	pid, err := strconv.Atoi(r.FormValue("playlistId"))
 	if err != nil {
 		panic(err)
@@ -202,7 +192,7 @@ func subsonicUpdatePlaylist(ctx context.Context, w http.ResponseWriter, r *http.
 	if err != nil {
 		panic(err)
 	}
-	pl, err := tube.GetPlaylist(ctx, u.ID, pid)
+	pl, err := u.GetPlaylist(ctx, pid)
 	if err != nil {
 		panic(err)
 	}
@@ -226,7 +216,7 @@ func subsonicUpdatePlaylist(ctx context.Context, w http.ResponseWriter, r *http.
 		pl.Desc = desc
 	}
 
-	if err := pl.Save(ctx); err != nil {
+	if err := u.SavePlaylist(ctx, &pl); err != nil {
 		panic(err)
 	}
 
@@ -247,7 +237,7 @@ func subsonicDeletePlaylist(ctx context.Context, w http.ResponseWriter, r *http.
 		panic(err)
 	}
 
-	if err := tube.DeletePlaylist(ctx, u.ID, pid); err != nil {
+	if err := u.DeletePlaylist(ctx, pid); err != nil {
 		panic(err)
 	}
 

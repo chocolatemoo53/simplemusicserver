@@ -1,0 +1,53 @@
+CREATE TABLE users (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	email TEXT NOT NULL UNIQUE,
+	password BLOB,
+	data TEXT NOT NULL
+);
+
+CREATE TABLE sessions (
+	token TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	expires INTEGER NOT NULL,
+	ip TEXT NOT NULL DEFAULT ''
+) WITHOUT ROWID;
+
+CREATE INDEX sessions_expires ON sessions (expires);
+
+CREATE TABLE tracks (
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	id TEXT NOT NULL,
+	sort_id TEXT NOT NULL,
+	data TEXT NOT NULL,
+	PRIMARY KEY (user_id, id)
+) WITHOUT ROWID;
+
+CREATE INDEX tracks_sort ON tracks (user_id, sort_id);
+
+CREATE TABLE files (
+	id TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	data TEXT NOT NULL
+) WITHOUT ROWID;
+
+CREATE INDEX files_user ON files (user_id);
+
+CREATE TABLE playlists (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	data TEXT NOT NULL
+);
+
+CREATE INDEX playlists_user ON playlists (user_id);
+
+CREATE TABLE stars (
+	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	ssid TEXT NOT NULL,
+	date INTEGER NOT NULL,
+	PRIMARY KEY (user_id, ssid)
+) WITHOUT ROWID;
+
+CREATE TABLE counters (
+	id TEXT PRIMARY KEY,
+	count INTEGER NOT NULL DEFAULT 0
+) WITHOUT ROWID;

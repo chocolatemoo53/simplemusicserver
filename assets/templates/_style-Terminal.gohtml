@@ -1,0 +1,38 @@
+:root {
+	--bg: #0A0D0A;
+	--surface: #142014;
+	--line: #223322;
+	--line-soft: #182418;
+	--control: #4E644E;
+	--text: #B5C2B5;
+	--muted: #8A988A;
+	--accent: #7FD962;
+	--on-accent: #0A0D0A;
+	--accent-soft: #142014;
+	--accent-ink: #7FD962;
+	--danger: #FF6B5F;
+	--select: #7FD962;
+	--shell: #121A12;
+	--shell-text: #B5C2B5;
+	--shell-muted: #8A988A;
+	--shell-soft: #9FAF9F;
+	--shell-hover: #182418;
+	--shell-active: #1E2B1E;
+	--shell-line: #2C3A2C;
+	--shell-accent: #7FD962;
+	--shell-on-accent: #0A0D0A;
+	--font: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+	--radius: 0;
+	color-scheme: dark;
+}
+::selection {
+	color: var(--bg);
+}
+h1::before, h2::before {
+	content: "# ";
+	color: var(--control);
+}
+h3::before {
+	content: "## ";
+	color: var(--control);
+}

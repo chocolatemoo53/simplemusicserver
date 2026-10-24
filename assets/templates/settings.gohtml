@@ -11,6 +11,12 @@
 				display: inline-flex;
 				text-align: justify;
 			}
+			small.help {
+				display: block;
+				max-width: 60ch;
+				margin-top: 4px;
+				color: var(--muted);
+			}
 			input[type="text"], input[type="email"] {
 				width: 100%;
 			}
@@ -18,7 +24,6 @@
 				margin-top: 0.5em;
 			}
 			ul.actions {
-				/*list-style: none;*/
 			}
 
 			th {
@@ -30,18 +35,36 @@
 			meter {
 				width: 10em;
 				max-width: 100%;
-				/*width: min(10em, 100%);*/
 			}
 
 			ul.actions li {
 				padding-bottom: 0.5em;
 			}
-
-		/*	@media (hover: none) {
-				tr td:first-child {
-					width: 7em;
+			@media screen and (max-width: 600px) {
+				.apps-list, .apps-list tbody, .apps-list tr, .apps-list td {
+					display: block;
 				}
-			}*/
+				.apps-list tr:first-child {
+					display: none;
+				}
+				.apps-list tr {
+					padding: 12px 0;
+					border-bottom: 1px solid var(--line);
+				}
+				.apps-list td {
+					padding: 2px 0;
+				}
+				.apps-list .app-name {
+					font-weight: 600;
+				}
+				.apps-list td[data-label]::before {
+					content: attr(data-label) ": ";
+					color: var(--muted);
+				}
+				.apps-list form {
+					margin-top: 8px;
+				}
+			}
 		</style>
 	</head>
 	<body>
@@ -49,114 +72,42 @@
 		<main>
 			<h2>{{tr "settings_title"}}</h2>
 			<p>{{tr "settings_intro"}}</p>
-			<p class="error-msg">{{$.ErrorMsg}}</p>
+			<p class="error-msg">{{$.ErrorMsg | ucfirst}}</p>
 			<form action="/settings" method="POST">
 				{{$opt := $.User.Display}}
 				<table>
 					<tbody class="header">
-						<tr id="sub"><th colspan="2">
-							{{if payment}}{{tr "settings_subscription"}}{{else}}{{tr "quota"}}{{end}}
-						</th></tr>
+						<tr id="sub"><th colspan="2">{{tr "settings_billing"}}</th></tr>
 					</tbody>
-					{{if payment}}
-						{{if $.User.Trialing}}
-						<tbody class="trialing">
-							<tr>
-								<td colspan="2" id="trial-explain">
-									<b>{{tr "settings_trialexplain"}}</b><br>
-									☛ <a href="/buy/" class="navlink">{{tr "settings_buylink"}}</a> 💸
-								</td>
-							</tr>
-							<tr>
-								<td>{{tr "settings_trialexpires"}}:</td>
-								<td>
-								{{if $.User.PlanExpire.IsZero}}
-									{{tr "settings_grandfathered"}}
-								{{else}}
-									{{if $.User.Expired}}⚠️ <b>{{tr "expired"}}</b> {{end}} 
-									{{$.User.PlanExpire | timestamp}}
-								{{end}}
-								</td>
-							</tr>
-						</tbody>
-						{{else}}
-						<tbody class="planned">
-							{{if $.HasSub}}
-							<tr>
-								<td><label for="plan">{{tr "plan"}}</label>:</td>
-								<td>{{tr $.User.Plan.Msg}} (<a class="navlink" href="/settings/payment">{{tr "settings_update"}}</a>)</td>
-							</tr>
-							{{end}}
-							<tr>
-							{{if (not $.HasSub)}}
-								<tr>
-									<td colspan="2" id="trial-explain">
-										<b>{{tr "settings_expired"}}</b><br>
-										☛ <a href="/buy/" class="navlink">{{tr "settings_buylink"}}</a> 💸
-									</td>
-								</tr>
-							{{else if $.User.Canceled}}
-								<td>{{tr "settings_standing"}}:</td>
-								<td>⚠️ {{tr "canceled"}} (<a class="navlink" href="/settings/payment">{{tr "settings_renew"}}</a>)</td>
-							{{else}}
-								<td>{{tr "settings_standing"}}:</td>
-								<td>{{$.User.PlanStatus}} (<a class="navlink" href="/settings/payment">{{if (eq $.User.PlanStatus "active")}}{{tr "settings_cancel"}}{{else}}{{tr "settings_renew"}}{{end}}</a>)</td>
-							{{end}}
-							</tr>
-							<tr>
-								<td>
-								{{if $.User.Canceled}}
-									{{tr "settings_expires"}}:
-								{{else}}
-									{{tr "settings_nextdue"}}:
-								{{end}}
-								</td>
-								<td>
-									{{if $.User.Expired}}⏰{{end}} 
-									{{$.User.PlanExpire | date}}
-								</td>
-							</tr>
-						</tbody>
-						{{end}}
-					{{end}}
 					<tbody>
-						{{$quota := $.User.CalcQuota}}
-						{{if $.User.StorageFull}}
+						<tr>
+							<td colspan="2">{{render "_standing" $}}</td>
+						</tr>
 						<tr>
 							<td>{{tr "settings_usage"}}:</td>
-							<td class="error-msg">
-								⚠️ {{$.User.Usage | bytesize}} / {{$quota | bytesize}} ({{$.User.UsageDesc}}%)<br>
-								{{render "_quota" $}}
-							</td>
+							<td>{{$.User.Usage | bytesize}} ({{tr "buy_free" (pricing.FreeBytes | bytesize)}})</td>
 						</tr>
+						<tr>
+							<td>{{tr "buy_balance"}}:</td>
+							<td><b>{{$.User.Balance}}</b> (<a href="/buy/" class="navlink">{{tr "settings_buylink"}}</a>)</td>
+						</tr>
+						<tr>
+							<td>{{tr "buy_monthly"}}:</td>
+							<td>{{$.User.MonthlyCost}}</td>
+						</tr>
+						{{with paiduntil $.User}}
+						<tr>
+							<td>{{tr "buy_lasts"}}:</td>
+							<td>{{. | date}}</td>
+						</tr>
+						{{end}}
+						{{if and (not (canupload $.User)) (not $.User.NeedsVerification)}}
 						<tr>
 							<td colspan="2" class="error-msg">{{tr "settings_storagefull"}}</td>
-						</tr>
-						{{else}}
-						<tr>
-							<td>{{tr "settings_usage"}}:</td>
-							<td>
-								{{$.User.Usage | bytesize}} / {{$quota | bytesize}} ({{$.User.UsageDesc}}%)<br>
-								{{render "_quota" $}}
-							</td>
 						</tr>
 						{{end}}
 					</tbody>
 
-				{{if $.CacheEnabled}}
-					<tbody class="header">
-						<tr><th colspan="2">{{tr "settings_library"}}</th></tr>
-					</tbody>
-					<tbody>
-						<tr>
-							<td><label>{{tr "librarycache"}}</label>:</td>
-							<td>
-								{{$.User.LastDump | timestamp}} 
-								<input form="reset-cache" type="submit" value='{{tr "resetcache" }}'>
-							</td>
-						</tr>
-					</tbody>
-				{{end}}
 
 					<tbody class="header">
 						<tr><th colspan="2">{{tr "settings_account"}}</th></tr>
@@ -166,14 +117,20 @@
 							<td><label for="email">{{tr "email"}}</label>:</td>
 							<td><input type="email" id="email" name="email" value="{{$.User.Email}}"></td>
 						</tr>
+						{{if $.User.NeedsVerification}}
+						<tr>
+							<td></td>
+							<td>
+								<small class="help">{{tr "verify_unconfirmed"}}</small>
+								<button type="submit" formaction="/settings/verify" formnovalidate>{{tr "verify_resend"}}</button>
+								{{if $.VerifySent}}<p role="status"><b>{{tr "verify_sent" $.User.Email}}</b></p>{{end}}
+							</td>
+						</tr>
+						{{end}}
 						<tr>
 							<td><label>{{tr "password"}}</label>:</td>
 							<td><a href="/settings/password" class="navlink">{{tr "settings_changepass"}}</a></td>
 						</tr>
-						<!-- <tr>
-							<td></td>
-							<td><input type="submit" value='{{tr "update"}}'></td>
-						</tr> -->
 					</tbody>
 
 					<tbody class="header">
@@ -187,6 +144,7 @@
 									<option value="" {{if (eq $.User.Theme "")}} selected {{end}}>Browser default</option>
 									<option value="Light" {{if (eq $.User.Theme "Light")}} selected {{end}}>Light</option>
 									<option value="Dark" {{if (eq $.User.Theme "Dark")}} selected {{end}}>Dark</option>
+									<option value="Terminal" {{if (eq $.User.Theme "Terminal")}} selected {{end}}>Terminal</option>
 								</select>
 							</td>
 						</tr>
@@ -195,24 +153,12 @@
 							<td class="check"><input type="checkbox" id="display-stretch" name="display-stretch" {{if $opt.Stretch}} checked {{end}}><label for="display-stretch">{{tr "display_stretch"}}</label></td>
 						</tr>
 						<tr>
-							<td><label for="musiclink">{{tr "settings_musiclink"}}</label>:</td>
+							<td><label for="lyrics-lookup">{{tr "settings_lyrics"}}</label>:</td>
 							<td>
-								<select id="musiclink" name="musiclink">
-									<option value="" {{if (eq $opt.MusicLink "")}} selected {{end}}>{{tr "settings_trackview"}}</option>
-									<option value="albums" {{if (eq $opt.MusicLink "albums")}} selected {{end}}>{{tr "settings_albumview"}}</option>
-								</select>
+								<input type="checkbox" id="lyrics-lookup" name="lyrics-lookup" aria-describedby="lyrics-lookup-help" {{if $opt.LyricsLookup}} checked {{end}}><label for="lyrics-lookup">{{tr "settings_lyrics_lookup"}}</label>
+								<small id="lyrics-lookup-help" class="help">{{tr "settings_lyrics_help"}}</small>
 							</td>
 						</tr>
-<!-- 						<tr>
-							<td><label for="trackselect">{{tr "settings_trackselect"}}</label>:</td>
-							<td>
-								<select id="trackselect" name="trackselect">
-									<option value="" {{if (eq $opt.TrackSelect "")}} selected {{end}}>{{tr "settings_trackseldefault"}}</option>
-									<option value="click" {{if (eq $opt.TrackSelect "click")}} selected {{end}}>{{tr "settings_trackselclick"}}</option>
-									<option value="ctrl" {{if (eq $opt.TrackSelect "ctrl")}} selected {{end}}>{{tr "settings_trackselctrl"}}</option>
-								</select>
-							</td>
-						</tr> -->
 
 						<tr>
 							<td></td>
@@ -221,18 +167,109 @@
 					</tbody>
 				</table>
 			</form>
-			<form id="reset-cache" action="/cache/reset" method="POST"></form>
+
+			<h3 id="pgp">{{tr "pgp_title"}}</h3>
+			<p>{{tr "pgp_explain"}}</p>
+			{{with $.Notice}}<p><b>{{. | ucfirst}}</b></p>{{end}}
+			{{if $.User.PGPKey}}
+				<p>{{tr "pgp_active"}} <code>{{$.User.PGPFingerprint}}</code></p>
+				<form action="/settings/pgp" method="POST">
+					<input type="hidden" name="remove" value="1">
+					<input type="submit" value='{{tr "pgp_remove"}}'>
+				</form>
+			{{else}}
+				<form action="/settings/pgp" method="POST">
+					<textarea name="key" rows="6" cols="64" spellcheck="false" placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----" required></textarea><br>
+					<input type="submit" value='{{tr "pgp_save"}}'>
+				</form>
+			{{end}}
+			<p><small>{{tr "pgp_warning"}}</small></p>
+			<form action="/settings/mail-test" method="POST">
+				<input type="submit" value='{{tr "pgp_test"}}'>
+			</form>
+
+			<h3 id="apps">{{tr "apps_title"}}</h3>
+			<p>{{tr "apps_explain"}} <a href="/subsonic">{{tr "apps_help"}}</a></p>
+			{{if $.NewAppPass}}
+				<div class="new-app-password">
+					<p>{{tr "apps_created" $.NewAppName}}</p>
+					<p><code class="secret">{{$.NewAppPass}}</code></p>
+					<p><small>{{tr "apps_username"}}: <code>{{$.User.Email}}</code></small></p>
+				</div>
+			{{end}}
+			{{if $.AppPasswords}}
+				<table class="apps-list">
+					<tr><th>{{tr "apps_name"}}</th><th>{{tr "apps_mode"}}</th><th>{{tr "apps_createdat"}}</th><th>{{tr "apps_lastused"}}</th><th></th></tr>
+					{{range $.AppPasswords}}
+						<tr>
+							<td class="app-name">{{.Name}}</td>
+							<td data-label='{{tr "apps_mode"}}'>{{if .Strict}}{{tr "apps_strict"}}{{else}}{{tr "apps_standard"}}{{end}}</td>
+							<td data-label='{{tr "apps_createdat"}}'>{{.Created | date}}</td>
+							<td data-label='{{tr "apps_lastused"}}'>{{if .LastUsed.IsZero}}{{tr "apps_never"}}{{else}}{{.LastUsed | date}}{{end}}</td>
+							<td>
+								<form action="/settings/app-passwords/{{.ID}}/revoke" method="POST">
+									<input type="submit" class="btn-danger" value='{{tr "apps_revoke"}}'>
+								</form>
+							</td>
+						</tr>
+					{{end}}
+				</table>
+			{{end}}
+			<form action="/settings/app-passwords" method="POST">
+				<table>
+					<tr>
+						<td><label for="app-name">{{tr "apps_name"}}:</label></td>
+						<td><input type="text" id="app-name" name="name" maxlength="50" placeholder='{{tr "apps_nameexample"}}' required></td>
+					</tr>
+					<tr>
+						<td>{{tr "apps_mode"}}:</td>
+						<td>
+							<label><input type="radio" name="mode" value="strict" checked> {{tr "apps_strict"}}</label>: <small>{{tr "apps_stricthelp"}}</small><br>
+							<label><input type="radio" name="mode" value="standard"> {{tr "apps_standard"}}</label>: <small>{{tr "apps_standardhelp"}}</small>
+						</td>
+					</tr>
+					<tr>
+						<td><label for="app-current-password">{{tr "currentpassword"}}:</label></td>
+						<td><input type="password" id="app-current-password" name="password" autocomplete="current-password" required></td>
+					</tr>
+					<tr>
+						<td></td>
+						<td><input type="submit" value='{{tr "apps_create"}}'></td>
+					</tr>
+				</table>
+			</form>
+
 			<h3>{{tr "settings_actions"}}</h3>
 			<ul class="actions">
-			{{if payment}}
 				<li>
-					<form action="/settings/payment" method="GET"><input type="submit" value='🤑 {{tr "settings_payment"}}'></form>
-				</li>
-			{{end}}
-				<li>
-					<form action="/logout" method="POST"><input type="submit" value='👋 {{tr "logout"}}'></form>
+					<form action="/logout" method="POST"><input type="submit" value='{{tr "logout"}}'></form>
 				</li>
 			</ul>
+
+			<h3 id="export">{{tr "export_title"}}</h3>
+			<p>{{tr "export_explain"}}</p>
+			<p><a class="btn" href="/export/library.zip" download>{{render "_icon" "download"}}{{tr "export_button"}}</a></p>
+			<p><small>{{tr "export_large"}} <a href="/sync">{{tr "sync_title"}}</a></small></p>
+
+			<h3 id="delete" class="error-msg">{{tr "delete_title"}}</h3>
+			<p>{{tr "delete_explain"}}</p>
+			{{if $.Refundable}}<p><b>{{tr "delete_refund" $.Refundable}}</b> <a href="/buy/#refunds">{{tr "refund_title"}}</a></p>{{end}}
+			<form action="/settings/delete" method="POST">
+				<table>
+					<tr>
+						<td><label for="delete-password">{{tr "currentpassword"}}:</label></td>
+						<td><input type="password" id="delete-password" name="password" autocomplete="current-password" required></td>
+					</tr>
+					<tr>
+						<td><label for="delete-confirm">{{tr "delete_confirm" $.User.Email}}:</label></td>
+						<td><input type="text" id="delete-confirm" name="confirm" autocomplete="off" required></td>
+					</tr>
+					<tr>
+						<td></td>
+						<td><input type="submit" class="btn-danger" value='{{tr "delete_button"}}'></td>
+					</tr>
+				</table>
+			</form>
 		</main>
 	</body>
 </html>

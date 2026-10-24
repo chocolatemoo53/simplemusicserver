@@ -2,111 +2,150 @@ package tube
 
 import (
 	"context"
-	"log"
+	"database/sql"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/url"
 	"os"
-	"time"
+	"path/filepath"
+	"sort"
+	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/guregu/dynamo"
-	"golang.org/x/sync/errgroup"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
-var dynamoTables = map[string]any{
-	"Counters":  counter{},
-	"Files":     File{},
-	"Playlists": Playlist{},
-	"Sessions":  Session{},
-	"Stars":     Star{},
-	"Tracks":    Track{},
-	"Users":     User{},
-}
-
-var ErrNotFound = dynamo.ErrNotFound
+//go:embed migrations/*.sql
+var migrationFS embed.FS
 
 var (
-	dbPrefix string = "Tube-"
-	db       *dynamo.DB
-	useDump  = false
+	ErrNotFound = errors.New("not found")
+	ErrConflict = errors.New("conflict")
 )
 
-func Init(region, prefix, endpoint string, debug bool) {
-	dbPrefix = prefix
-	var err error
-	var sesh *session.Session
-	if endpoint == "" {
-		sesh, err = session.NewSession()
-	} else {
-		log.Println("Using DynamoDB endpoint:", endpoint)
-		sesh, err = session.NewSession(&aws.Config{
-			Endpoint:    &endpoint,
-			Credentials: credentials.NewStaticCredentials("dummy", "dummy", ""),
-		})
-		if region == "" {
-			region = "local"
-		}
+var db *sql.DB
+
+type querier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func Init(ctx context.Context, path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
 	}
+	conn, err := Open(ctx, path)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	cfg := &aws.Config{
-		Region: &region,
-	}
-	if endpoint == "" && region == "" {
-		region = os.Getenv("AWS_REGION")
-	}
-	if debug {
-		cfg.LogLevel = aws.LogLevel(aws.LogDebugWithHTTPBody)
-	}
-	db = dynamo.New(sesh, cfg)
+	db = conn
+	return nil
 }
 
-func dynamoTable(name string) dynamo.Table {
-	return db.Table(dbPrefix + name)
+func Open(ctx context.Context, path string) (*sql.DB, error) {
+	params := url.Values{}
+	params.Set("_txlock", "immediate")
+	params.Add("_pragma", "journal_mode(WAL)")
+	params.Add("_pragma", "busy_timeout(10000)")
+	params.Add("_pragma", "foreign_keys(1)")
+	params.Add("_pragma", "synchronous(NORMAL)")
+	conn, err := sql.Open("sqlite", "file:"+path+"?"+params.Encode())
+	if err != nil {
+		return nil, err
+	}
+	if err := migrate(ctx, conn); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("migrating database: %w", err)
+	}
+	return conn, nil
 }
 
-type createTabler interface {
-	CreateTable(*dynamo.CreateTable)
+func Close() error {
+	if db == nil {
+		return nil
+	}
+	return db.Close()
 }
 
-func CreateTables(ctx context.Context) error {
-	log.Println("Checking DynamoDB tables... prefix =", dbPrefix)
+func migrate(ctx context.Context, conn *sql.DB) error {
+	names, err := fs.Glob(migrationFS, "migrations/*.sql")
+	if err != nil {
+		return err
+	}
+	sort.Strings(names)
 
-	grp, ctx := errgroup.WithContext(ctx)
-	for name, model := range dynamoTables {
-		name := dynamoTable(name).Name()
-		model := model
-
-		if _, err := db.Table(name).Describe().RunWithContext(ctx); err == nil {
-			continue
+	var version int
+	if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	for i := version; i < len(names); i++ {
+		stmts, err := migrationFS.ReadFile(names[i])
+		if err != nil {
+			return err
 		}
-
-		log.Println("Creating table:", name)
-		grp.Go(func() error {
-			create := db.CreateTable(name, model).OnDemand(true)
-			if custom, ok := model.(createTabler); ok {
-				custom.CreateTable(create)
+		err = withTx(ctx, conn, func(tx *sql.Tx) error {
+			if _, err := tx.ExecContext(ctx, string(stmts)); err != nil {
+				return fmt.Errorf("%s: %w", names[i], err)
 			}
-			return create.RunWithContext(ctx)
+			_, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", i+1))
+			return err
 		})
+		if err != nil {
+			return err
+		}
 	}
-	return grp.Wait()
+	return nil
 }
 
-type counter struct {
-	ID    string `dynamo:",hash"`
-	Count int
+func withTx(ctx context.Context, conn *sql.DB, fn func(*sql.Tx) error) error {
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
-func NextID(ctx context.Context, class string) (n int, err error) {
-	var ct counter
-
-	table := dynamoTable("Counters")
-	err = table.Update("ID", class).Add("Count", 1).Value(&ct)
-	return ct.Count, err
+func inTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	return withTx(ctx, db, fn)
 }
 
-func init() {
-	dynamo.RetryTimeout = 5 * time.Minute
+func notFound(err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+func isUniqueViolation(err error) bool {
+	var se *sqlite.Error
+	return errors.As(err, &se) && se.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE
+}
+
+func encode(v any) (string, error) {
+	data, err := json.Marshal(v)
+	return string(data), err
+}
+
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+func incCounter(ctx context.Context, id string, n int) error {
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO counters (id, count) VALUES (?, ?)
+		ON CONFLICT (id) DO UPDATE SET count = count + excluded.count`,
+		id, n)
+	return err
 }

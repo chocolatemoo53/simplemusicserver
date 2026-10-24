@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"encoding/xml"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -22,8 +21,6 @@ type subsonicAlbum struct {
 	Created   string    `xml:"created,attr" json:"created"`
 	Year      int       `xml:"year,attr,omitempty" json:"year,omitempty"`
 	Starred   string    `xml:"starred,attr,omitempty" json:"starred,omitempty"`
-	// <xs:attribute name="playCount" type="xs:long" use="optional"/>
-	// <xs:attribute name="genre" type="xs:string" use="optional"/>
 
 	Songs []subsonicSong `xml:",omitempty" json:"song,omitempty"`
 }
@@ -33,7 +30,7 @@ func newSubsonicAlbum(tt []tube.Track, includeTracks bool) subsonicAlbum {
 	album := subsonicAlbum{
 		ID:        first.AlbumSSID(),
 		Name:      first.Info.Album,
-		Artist:    first.Info.Artist, // TODO
+		Artist:    first.Info.Artist,
 		ArtistID:  first.ArtistSSID(),
 		SongCount: len(tt),
 		Created:   first.Date.Format(subsonicTimeLayout),
@@ -101,8 +98,6 @@ func subsonicGetAlbumList1(ctx context.Context, w http.ResponseWriter, r *http.R
 	}
 	allAlbums := lib.Albums(filter)
 
-	fmt.Printf("FILTER: %#v\n", filter)
-
 	resp := struct {
 		subsonicResponse
 		AlbumList struct {
@@ -158,8 +153,6 @@ func subsonicFilter(r *http.Request) organize {
 	genre := r.FormValue("genre")
 	mfid := r.FormValue("musicFolderId")
 	if mfid == "1" {
-		// "Music" folder
-		// TODO: hmm
 		mfid = ""
 	}
 	ssid := tube.ParseSSID(mfid)

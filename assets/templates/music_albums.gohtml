@@ -4,12 +4,12 @@
 	<div class="album meat-partial" id="{{$first.AlbumCode}}" data-album="{{$first.Album}}" data-artist="{{$first.Artist}}" data-title="{{range $album}} {{.Title}} {{end}}">
 		<div class="album-inner">
 			{{if $first.Picture.ID}}
-				<img class="album-cover" alt="{{$first.Picture.Desc}}" src="{{$first.Picture.StorageKey | sign}}" loading="lazy" onclick="return selectAlbum(this, arguments[0]) || toggleOrPlay('{{$first.ID}}'),false;">
+				<img class="album-cover" alt="{{$first.Picture.Desc}}" src="{{$first.Picture.URL}}" loading="lazy" onclick="return selectAlbum(this, arguments[0]) || toggleOrPlay('{{$first.ID}}'),false;">
 			{{else}}
 				<div class="album-cover placeholder"></div>
 			{{end}}
 			<div class="album-info">
-				<h3><a class="album-artist" tabindex=0 onclick="arguments[0].stopPropagation();return setFilter('artist:{{$first.AnyArtist}}'),false;">{{$first.Info.Artist}}</a> - {{$first.Info.Album}}</h3>
+				<h2><a class="album-artist" tabindex=0 onclick="arguments[0].stopPropagation();return setFilter('artist:{{$first.AnyArtist}}'),false;">{{$first.Info.Artist}}</a> - {{$first.Info.Album}}</h2>
 				<ol class="meat-merge">
 				{{range $album}}
 					<li {{with .Number}} value="{{.}}" {{end}}
@@ -23,7 +23,7 @@
 						<span class="track-album" style="display: none;">{{.Info.Album}}</span>
 						<span class="track-pic" style="display: none;">
 							{{if .Picture.ID}}
-								<img class="album-cover" alt="{{.Picture.Desc}}" src="{{.Picture.StorageKey | sign}}" loading="lazy">
+								<img class="album-cover" alt="{{.Picture.Desc}}" src="{{.Picture.URL}}" loading="lazy">
 							{{end}}
 						</span>
 					</li>

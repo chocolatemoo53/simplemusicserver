@@ -1,13 +1,12 @@
 intertube.exe
 intertube
-intertube.zip
 main
 env.sh
 env.ps1
 cmd/tubesync/tubesync.exe
 cmd/tubesync/tubesync
-deploydate
 */node_modules
 config.toml
 .DS_Store
-bootstrap
+.env
+data/

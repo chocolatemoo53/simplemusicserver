@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dustin/go-humanize"
 	"github.com/fsnotify/fsnotify"
-	"github.com/kardianos/osext"
 
-	"github.com/guregu/intertube/storage"
 	"github.com/guregu/intertube/tube"
 )
 
@@ -38,8 +40,6 @@ func getTemplate(ctx context.Context, name string) *template.Template {
 func templateFuncs(ctx context.Context) template.FuncMap {
 	m := make(template.FuncMap)
 
-	// TODO: use jst/account settings and overwrite time stuff
-
 	localizer := localizerFrom(ctx)
 	lang := languageFrom(ctx)
 	user, loggedIn := userFrom(ctx)
@@ -51,20 +51,23 @@ func templateFuncs(ctx context.Context) template.FuncMap {
 	m["tc"] = translateCountFunc(localizer)
 	m["lang"] = func() string { return lang }
 	m["path"] = func() string { return pathFrom(ctx) }
+	m["hasprefix"] = strings.HasPrefix
 	m["loggedin"] = func() bool { return loggedIn }
+	m["me"] = func() tube.User { return user }
+	m["isadmin"] = func() bool { return loggedIn && slices.Contains(AdminIDs, user.ID) }
 
 	return m
 }
 
 func parseTemplates() *template.Template {
-	here, err := osext.ExecutableFolder()
+	assets, err := assetsDir()
 	if err != nil {
 		panic(err)
 	}
 
 	globs := []string{
-		filepath.Join(here, "assets", "templates", "*.gohtml"),
-		filepath.Join(here, "assets", "templates", "*.gojs"),
+		filepath.Join(assets, "templates", "*.gohtml"),
+		filepath.Join(assets, "templates", "*.gojs"),
 	}
 
 	t := template.New("root").Funcs(template.FuncMap{
@@ -84,60 +87,57 @@ func parseTemplates() *template.Template {
 			return template.HTML(
 				fmt.Sprintf(`<time datetime="%s">%s</time>`, rfc, t.Format(dateFmt)))
 		},
-		"shortdate": func(t time.Time) string {
-			layout := "01-02"
-			now := time.Now().UTC()
-			if t.Year() != now.Year() && now.Sub(t) >= 4*30*24*time.Hour {
-				layout = "2006-01-02"
-			}
-			return t.Format(layout)
-		},
-		"days": func(d time.Duration) string {
-			days := d.Round(24*time.Hour).Hours() / 24
-			return fmt.Sprintf("%g", days)
-		},
-		"subtract": func(a, b int) int {
-			return a - b
-		},
-		"inc": func(a int) int {
-			return a + 1
-		},
-		"add": func(a int, b ...int) int {
-			for _, n := range b {
-				a += n
-			}
-			return a
-		},
-		"pctof": func(n int64, pct float64) int {
-			return int(float64(n) * pct)
-		},
-		"concat": func(strs ...string) string {
-			return strings.Join(strs, "")
+		"erasedays":    eraseDays,
+		"replicadelay": replicaDelayDays,
+		"mmss": func(secs int) string {
+			return fmt.Sprintf("%d:%02d", secs/60, secs%60)
 		},
 		"bespace": func(v []string) string {
 			return strings.Join(v, " ")
 		},
-		"filesize": func(size int64) string {
-			return humanize.Bytes(uint64(size))
-		},
 		"bytesize": func(size int64) string {
-			str := humanize.IBytes(uint64(size))
-			return strings.ReplaceAll(str, "iB", "B")
-		},
-		"currency": formatCurrency,
-
-		"tr":       translateFunc(defaultLocalizer),
-		"tc":       translateCountFunc(defaultLocalizer),
-		"lang":     func() string { return "en" },
-		"path":     func() string { return "" },
-		"loggedin": func() bool { return false },
-
-		"sign": func(key string) (string, error) {
-			return storage.FilesBucket.PresignGet(key, thumbnailDownloadTTL)
+			return humanize.Bytes(uint64(max(size, 0)))
 		},
 
-		"payment": func() bool {
-			return UseStripe
+		"tr":        translateFunc(defaultLocalizer),
+		"tc":        translateCountFunc(defaultLocalizer),
+		"lang":      func() string { return "en" },
+		"path":      func() string { return "" },
+		"hasprefix": strings.HasPrefix,
+		"loggedin":  func() bool { return false },
+		"me":        func() tube.User { return tube.User{} },
+		"isadmin":   func() bool { return false },
+
+		"payment": paymentEnabled,
+		"canpay":  canPay,
+		"manualpay": func() string {
+			return ManualPayment
+		},
+		"ucfirst": ucfirst,
+		"domain": func() string {
+			return Domain
+		},
+		"pricing": func() tube.Pricing {
+			return tube.Prices
+		},
+		"state": func(u tube.User) string {
+			return string(u.State(time.Now()))
+		},
+		"paiduntil": func(u tube.User) any {
+			if t := u.PaidUntil(time.Now()); !t.IsZero() {
+				return t
+			}
+			return nil
+		},
+		"canupload": func(u tube.User) bool {
+			return u.CanStore(1, time.Now())
+		},
+		"lockdate": func(u tube.User) time.Time {
+			return u.LapsedAt.Add(daysDur(tube.Prices.GraceDays))
+		},
+		"formatusd": formatDecimal,
+		"monthlycost": func(gb int64) tube.Micros {
+			return tube.Prices.MonthlyCost(tube.Prices.FreeBytes + gb*1_000_000_000)
 		},
 
 		"blankzero": func(i int) string {
@@ -152,17 +152,11 @@ func parseTemplates() *template.Template {
 		template.Must(t.ParseGlob(glob))
 	}
 
-	// if DebugMode {
-	// 	for _, tt := range t.Templates() {
-	// 		fmt.Println("Template:", tt.Name())
-	// 	}
-	// }
-
 	return t
 }
 
-func renderFunc(ctx context.Context) func(string, interface{}) (template.HTML, error) {
-	return func(name string, data interface{}) (template.HTML, error) {
+func renderFunc(ctx context.Context) func(string, any) (template.HTML, error) {
+	return func(name string, data any) (template.HTML, error) {
 		target := getTemplate(ctx, name)
 		if target == nil {
 			return "", fmt.Errorf("render: missing template: %s", name)
@@ -177,11 +171,11 @@ func renderFunc(ctx context.Context) func(string, interface{}) (template.HTML, e
 	}
 }
 
-func renderCSSFunc(ctx context.Context, active string) func(string, interface{}) (template.CSS, error) {
-	if active == "" {
+func renderCSSFunc(ctx context.Context, active string) func(string, any) (template.CSS, error) {
+	if active == "" || !validThemes[active] {
 		active = "default"
 	}
-	return func(name string, data interface{}) (template.CSS, error) {
+	return func(name string, data any) (template.CSS, error) {
 		if name == "@" {
 			name = active
 		}
@@ -200,7 +194,6 @@ func renderCSSFunc(ctx context.Context, active string) func(string, interface{})
 	}
 }
 
-// hot reload for dev
 func WatchFiles() func() error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -217,7 +210,7 @@ func WatchFiles() func() error {
 					templates = parseTemplates()
 				case ".toml":
 					log.Println("Reloading translations...", filepath.Base(ev.Name))
-					loadTranslations() // TODO: this is racy/busted, newer Go versions get mad
+					loadTranslations()
 				}
 			case err := <-watcher.Errors:
 				log.Println("watch error:", err)
@@ -225,16 +218,41 @@ func WatchFiles() func() error {
 		}
 	}()
 
-	here, err := osext.ExecutableFolder()
+	assets, err := assetsDir()
 	if err != nil {
 		panic(err)
 	}
-	if err := watcher.Add(filepath.Join(here, "assets", "templates")); err != nil {
+	if err := watcher.Add(filepath.Join(assets, "templates")); err != nil {
 		panic(err)
 	}
-	if err := watcher.Add(filepath.Join(here, "assets", "text")); err != nil {
+	if err := watcher.Add(filepath.Join(assets, "text")); err != nil {
 		panic(err)
 	}
 	log.Println("Hot reloading enabled")
 	return watcher.Close
+}
+
+var AssetsDir string
+
+func assetsDir() (string, error) {
+	if AssetsDir != "" {
+		return AssetsDir, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(exe), "assets"), nil
+}
+
+func ucfirst(s string) string {
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
 }

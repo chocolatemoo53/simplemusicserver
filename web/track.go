@@ -2,28 +2,31 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"path"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/guregu/dynamo"
-	"github.com/guregu/kami"
 
 	"github.com/guregu/intertube/tube"
 )
 
 func deleteTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
-	trackID := kami.Param(ctx, "id")
+	trackID := r.PathValue("id")
 
-	if err := tube.DeleteTrack(ctx, u.ID, trackID); err != nil {
+	object, err := tube.RemoveTrack(ctx, u.ID, trackID)
+	if err == tube.ErrNotFound {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
 		panic(err)
 	}
+	deleteObjects(ctx, u.ID, []string{object})
 	if err := u.UpdateLastMod(ctx); err != nil {
 		panic(err)
 	}
@@ -34,21 +37,22 @@ func deleteTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
 func incPlays(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
-	trackID := kami.Param(ctx, "id")
+	trackID := r.PathValue("id")
 	secs, _ := strconv.ParseFloat(r.FormValue("duration"), 64)
 
-	track, err := tube.GetTrack(ctx, u.ID, trackID)
+	track, err := u.GetTrack(ctx, trackID)
 	if err != nil {
 		panic(err)
 	}
 
 	if track.Duration == 0 && secs > 0 {
-		if err := track.SetDuration(ctx, int(secs)); err != nil && !dynamo.IsCondCheckFailed(err) {
+		if _, err := u.SetDuration(ctx, trackID, int(secs)); err != nil && !errors.Is(err, tube.ErrConflict) {
 			panic(err)
 		}
 	}
 
-	if err := track.IncPlays(ctx); err != nil {
+	track, err = u.IncPlays(ctx, trackID)
+	if err != nil {
 		panic(err)
 	}
 
@@ -56,32 +60,22 @@ func incPlays(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
-	// TODO: hmm...
-	// if err := u.UpdateLastMod(ctx); err != nil {
-	// panic(err)
-	// }
-
 	fmt.Fprint(w, track.Plays)
 }
 
 func setResume(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
-	trackID := kami.Param(ctx, "id")
-	secs, _ := strconv.ParseFloat(r.FormValue("cur"), 64)  // track current position
-	at, _ := strconv.ParseInt(r.FormValue("time"), 10, 64) // unix time in msec
+	trackID := r.PathValue("id")
+	secs, _ := strconv.ParseFloat(r.FormValue("cur"), 64)
+	at, _ := strconv.ParseInt(r.FormValue("time"), 10, 64)
 	mod := msec2time(at)
 
-	track, err := tube.GetTrack(ctx, u.ID, trackID)
-	if err != nil {
+	if _, err := u.SetResume(ctx, trackID, secs, mod); err != nil {
 		if err == tube.ErrNotFound {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		panic(err)
-	}
-
-	if err := track.SetResume(ctx, secs, mod); err != nil {
-		if dynamo.IsCondCheckFailed(err) {
+		if errors.Is(err, tube.ErrConflict) {
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
@@ -97,20 +91,13 @@ func setResume(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
 func editTrackForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
-	// trackID, _ := strconv.Atoi(kami.Param(ctx, "id"))
-	id := kami.Param(ctx, "id")
+	id := r.PathValue("id")
 	ids := strings.Split(id, ",")
 	t, tracks, err := getMultiTracks(ctx, u, ids)
 	if err != nil {
 		panic(err)
 	}
 	multi := len(tracks) > 1
-
-	// allTracks, err := tube.GetTracks(ctx, u.ID)
-	// if err != nil && err != tube.ErrNotFound {
-	// 	panic(err)
-	// }
-	// group := groupTracks(allTracks, true)
 
 	data := struct {
 		User     tube.User
@@ -133,19 +120,13 @@ func editTrackForm(ctx context.Context, w http.ResponseWriter, r *http.Request) 
 
 func editTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
-	id := kami.Param(ctx, "id")
+	id := r.PathValue("id")
 	ids := strings.Split(id, ",")
 	t, tracks, err := getMultiTracks(ctx, u, ids)
 	if err != nil {
 		panic(err)
 	}
 	multi := len(tracks) > 1
-
-	// allTracks, err := tube.GetTracks(ctx, u.ID)
-	// if err != nil && err != tube.ErrNotFound {
-	// 	panic(err)
-	// }
-	// group := groupTracks(allTracks, true)
 
 	renderError := func(err error) {
 		var data = struct {
@@ -167,7 +148,6 @@ func editTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		}
 		renderTemplate(ctx, w, "track-edit", data, http.StatusOK)
 	}
-	_ = renderError
 
 	newPic := t.Picture
 	picdel := false
@@ -181,7 +161,7 @@ func editTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err == nil {
-			data, err := ioutil.ReadAll(f)
+			data, err := io.ReadAll(f)
 			if err != nil {
 				renderError(err)
 				return
@@ -190,7 +170,7 @@ func editTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 			if len(ext) > 0 && ext[0] == '.' {
 				ext = ext[1:]
 			}
-			pic, err := savePic(data, ext, fh.Header.Get("Content-Type"), t.Picture.Desc)
+			pic, err := savePicture(ctx, u, data, ext, fh.Header.Get("Content-Type"), t.Picture.Desc)
 			if err != nil {
 				renderError(err)
 				return
@@ -217,7 +197,7 @@ func editTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		t.Tags = strings.Split(strings.ToLower(r.FormValue("tags")), " ")
 		t.Dirty = true
 		t.LastMod = time.Now().UTC()
-		if err := t.Save(ctx); err != nil {
+		if err := u.SaveTrack(ctx, &t); err != nil {
 			renderError(err)
 			return
 		}
@@ -237,47 +217,46 @@ func editTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		Composer:    r.FormValue("composer"),
 		Comment:     r.FormValue("comment"),
 	}
-	// TODO: total
 	year, _ := strconv.Atoi(r.FormValue("year"))
 	disc, _ := strconv.Atoi(r.FormValue("disc"))
 	discs, _ := strconv.Atoi(r.FormValue("discs"))
 
-	update := func(u *dynamo.Update) {
+	update := func(t *tube.Track) {
 		if info.Artist != "" {
-			u.Set("Artist", strings.ToLower(info.Artist))
-			u.Set("Info.Artist", info.Artist)
+			t.Artist = strings.ToLower(info.Artist)
+			t.Info.Artist = info.Artist
 		}
 		if info.Album != "" {
-			u.Set("Album", strings.ToLower(info.Album))
-			u.Set("Info.Album", info.Album)
+			t.Album = strings.ToLower(info.Album)
+			t.Info.Album = info.Album
 		}
 		if info.AlbumArtist != "" {
-			u.Set("AlbumArtist", strings.ToLower(info.AlbumArtist))
-			u.Set("Info.AlbumArtist", info.AlbumArtist)
+			t.AlbumArtist = strings.ToLower(info.AlbumArtist)
+			t.Info.AlbumArtist = info.AlbumArtist
 		}
 		if info.Composer != "" {
-			u.Set("Composer", strings.ToLower(info.Composer))
-			u.Set("Info.Composer", info.Composer)
+			t.Composer = strings.ToLower(info.Composer)
+			t.Info.Composer = info.Composer
 		}
 		if info.Comment != "" {
-			u.Set("Comment", strings.ToLower(info.Comment))
-			u.Set("Info.'Comment'", info.Comment)
+			t.Comment = strings.ToLower(info.Comment)
+			t.Info.Comment = info.Comment
 		}
 		if year != 0 {
-			u.Set("Year", year)
+			t.Year = year
 		}
 		if disc != 0 {
-			u.Set("Disc", disc)
+			t.Disc = disc
 		}
 		if discs != 0 {
-			u.Set("Discs", discs)
+			t.Discs = discs
 		}
 		if newPic != (tube.Picture{}) || picdel {
-			u.Set("Picture", newPic)
+			t.Picture = newPic
 		}
 	}
 
-	if err := tube.MassUpdateTracks(ctx, u.ID, ids, update); err != nil {
+	if err := u.MassUpdateTracks(ctx, ids, update); err != nil {
 		renderError(err)
 		return
 	}
@@ -291,13 +270,13 @@ func editTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 func getMultiTracks(ctx context.Context, u tube.User, ids []string) (t tube.Track, tracks tube.Tracks, err error) {
 	multi := len(ids) > 1
 	if !multi {
-		t, err = tube.GetTrack(ctx, u.ID, ids[0])
+		t, err = u.GetTrack(ctx, ids[0])
 		if err != nil {
 			panic(err)
 		}
 		tracks = tube.Tracks{t}
 	} else {
-		tracks, err = tube.GetTracksBatch(ctx, u.ID, ids)
+		tracks, err = u.GetTracksBatch(ctx, ids)
 		if err != nil {
 			panic(err)
 		}
@@ -340,108 +319,6 @@ func getMultiTracks(ctx context.Context, u tube.User, ids []string) (t tube.Trac
 	return
 }
 
-// func groupByArtistAlbum(tracks []tube.Track) (artists []string, albums map[string][]string, m map[string]map[string][]tube.Track) {
-// 	for _, t := range tracks {
-// 		artist := t.AlbumArtist
-// 		if artist == "" {
-// 			artist = t.Artist
-// 		}
-// 		tx, seenArtist := m[artist][t.Album]
-// 		album, ok := albums[artist]
-// 		if ok {
-// 			albums[artist] = append(albums[artist])
-// 		}
-// 	}
-// }
-
-type groupedTracks struct {
-	artists              []string
-	albums               []string
-	albumArtists         []string
-	eitherArtist         []string
-	albumsByArtist       map[string][]string
-	albumsByAlbumArtist  map[string][]string
-	albumsByEitherArtist map[string][]string
-	trackMap             map[string]map[string][]tube.Track
-}
-
-// TODO: this sucks ass
-func groupTracks(tracks []tube.Track, mergeAlbumArtist bool) groupedTracks {
-	group := &groupedTracks{
-		albumsByArtist:       make(map[string][]string),
-		albumsByAlbumArtist:  make(map[string][]string),
-		albumsByEitherArtist: make(map[string][]string),
-		trackMap:             make(map[string]map[string][]tube.Track),
-	}
-	albumsSeen := make(map[string]struct{})
-
-	for _, t := range tracks {
-		artist := t.Info.AlbumArtist
-		if artist == "" {
-			artist = t.Info.Artist
-		}
-
-		if _, ok := albumsSeen[t.Info.Album]; !ok {
-			group.albums = append(group.albums, t.Info.Album)
-			group.albumsByEitherArtist[artist] = append(group.albumsByEitherArtist[artist], t.Info.Album)
-			albumsSeen[t.Info.Album] = struct{}{}
-		}
-
-		if t.Info.Artist != "" {
-			albs, ok := group.albumsByArtist[t.Info.Artist]
-			if !ok {
-				group.artists = append(group.artists, t.Info.Artist)
-			}
-			albs = append(albs, t.Info.Album)
-			group.albumsByArtist[t.Info.Artist] = albs
-		}
-
-		if t.Info.AlbumArtist != "" {
-			albs, ok := group.albumsByAlbumArtist[t.Info.AlbumArtist]
-			if !ok {
-				group.albumArtists = append(group.albumArtists, t.Info.AlbumArtist)
-			}
-			albs = append(albs, t.Info.Album)
-			group.albumsByAlbumArtist[t.Info.AlbumArtist] = albs
-		}
-
-		if _, ok := group.trackMap[artist]; !ok {
-			group.trackMap[artist] = make(map[string][]tube.Track)
-			group.eitherArtist = append(group.eitherArtist, artist)
-		}
-		group.trackMap[artist][t.Info.Album] = append(group.trackMap[artist][t.Info.Album], t)
-	}
-	if mergeAlbumArtist {
-		for aa := range group.albumsByAlbumArtist {
-			if _, ok := group.albumsByArtist[aa]; !ok {
-				group.artists = append(group.artists, aa)
-			}
-		}
-		group.albumArtists = group.artists
-		// for a := range albumsByArtist {
-		// 	if _, ok := albumsByAlbumArtist[a]; !ok {
-		// 		albumArtists = append(albumArtists, a)
-		// 	}
-		// }
-	}
-
-	sort.Strings(group.artists)
-	sort.Strings(group.albums)
-	sort.Strings(group.albumArtists)
-	sort.Strings(group.eitherArtist)
-	for _, albums := range group.albumsByArtist {
-		sort.Strings(albums)
-	}
-	for _, albums := range group.albumsByAlbumArtist {
-		sort.Strings(albums)
-	}
-	for _, albums := range group.albumsByEitherArtist {
-		sort.Strings(albums)
-	}
-	return *group
-}
-
-// js Date.getTime() -> go time.Time
 func msec2time(msecs int64) time.Time {
 	t := time.Unix(msecs/1000, (msecs%1000)*1000000)
 	return t

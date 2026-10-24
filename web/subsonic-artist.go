@@ -10,25 +10,13 @@ import (
 )
 
 type subsonicArtist struct {
-	XMLName xml.Name `xml:"artist" json:"-"`
-	// <artist id="5449" name="A-Ha" coverArt="ar-5449" albumCount="4"/>
-	/*
-		<xs:attribute name="id" type="xs:string" use="required"/>
-		<xs:attribute name="name" type="xs:string" use="required"/>
-		<xs:attribute name="coverArt" type="xs:string" use="optional"/>
-		<xs:attribute name="artistImageUrl" type="xs:string" use="optional"/>
-		<!--  Added in 1.16.1  -->
-		<xs:attribute name="albumCount" type="xs:int" use="required"/>
-		<xs:attribute name="starred" type="xs:dateTime" use="optional"/>
-	*/
-	ID       tube.SSID `xml:"id,attr" json:"id"`
-	Name     string    `xml:"name,attr" json:"name"`
-	CoverArt string    `xml:"coverArt,attr,omitempty" json:"coverArt,omitempty"`
-	// TODO: artistImageUrl
-	AlbumCount int    `xml:"albumCount,attr" json:"albumCount"`
-	Starred    string `xml:"starred,attr,omitempty" json:"starred,omitempty"`
-
-	Albums []subsonicAlbum `xml:",omitempty" json:"album,omitempty"`
+	XMLName    xml.Name        `xml:"artist" json:"-"`
+	ID         tube.SSID       `xml:"id,attr" json:"id"`
+	Name       string          `xml:"name,attr" json:"name"`
+	CoverArt   string          `xml:"coverArt,attr,omitempty" json:"coverArt,omitempty"`
+	AlbumCount int             `xml:"albumCount,attr" json:"albumCount"`
+	Starred    string          `xml:"starred,attr,omitempty" json:"starred,omitempty"`
+	Albums     []subsonicAlbum `xml:",omitempty" json:"album,omitempty"`
 }
 
 func newSubsonicArtist(a *artistInfo) subsonicArtist {
@@ -39,7 +27,6 @@ func newSubsonicArtist(a *artistInfo) subsonicArtist {
 	}
 	for _, t := range a.tracks {
 		if t.Picture.ID != "" {
-			// TODO: artist pic?
 			artist.CoverArt = t.TrackSSID().String()
 			break
 		}
@@ -49,12 +36,10 @@ func newSubsonicArtist(a *artistInfo) subsonicArtist {
 
 func subsonicGetArtists(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
-	tracks, err := u.GetTracks(ctx)
+	lib, err := getLibrary(ctx, u)
 	if err != nil {
 		panic(err)
 	}
-
-	grp := groupTracks(tracks, true)
 
 	type artistsResp struct {
 		subsonicResponse
@@ -68,23 +53,20 @@ func subsonicGetArtists(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		subsonicResponse: subOK(),
 	}
 	resp.Indexes.IgnoredArticles = subsonicIgnoreArticles
-	resp.Indexes.List = newSubsonicIndexes(grp)
+	resp.Indexes.List = newSubsonicIndexes(lib.Artists(organize{}))
 
 	writeSubsonic(ctx, w, r, resp)
 }
 
 func subsonicGetIndexes(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
-	tracks, err := u.GetTracks(ctx)
+	lib, err := getLibrary(ctx, u)
 	if err != nil {
 		panic(err)
 	}
 
-	grp := groupTracks(tracks, true)
-
 	type artistsResp struct {
 		subsonicResponse
-		// TODO: ignoredArticles=""
 		Indexes struct {
 			IgnoredArticles string          `xml:"ignoredArticles,attr" json:"ignoredArticles"`
 			List            []subsonicIndex `json:"index,omitempty"`
@@ -95,7 +77,7 @@ func subsonicGetIndexes(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		subsonicResponse: subOK(),
 	}
 	resp.Indexes.IgnoredArticles = subsonicIgnoreArticles
-	resp.Indexes.List = newSubsonicIndexes(grp)
+	resp.Indexes.List = newSubsonicIndexes(lib.Artists(organize{}))
 
 	writeSubsonic(ctx, w, r, resp)
 }
@@ -103,40 +85,34 @@ func subsonicGetIndexes(ctx context.Context, w http.ResponseWriter, r *http.Requ
 func subsonicGetArtist(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
 	rawid := r.FormValue("id")
-	id := tube.ParseSSID(rawid).ID
+	ssid := tube.ParseSSID(rawid)
 
-	tracks, err := u.GetTracks(ctx)
+	lib, err := getLibrary(ctx, u)
 	if err != nil {
 		panic(err)
 	}
-	sortTracks(tracks)
 
-	// TODO: make efficient
-	allAlbums := byAlbum(tracks)
+	artist, ok := lib.artists[ssid.String()]
+	if !ok {
+		writeSubsonic(ctx, w, r, subErr(70, "The requested data was not found."))
+		return
+	}
 
+	allAlbums := lib.Albums(organize{ssid: artist.ssid})
 	var albums []subsonicAlbum
 	for _, a := range allAlbums {
-		if a[0].AnyArtist() == id /*|| a[0].Info.AlbumArtist == id || a[0].Info.Composer == id */ {
-			x := newSubsonicAlbum(a, false)
-			albums = append(albums, x)
-		}
+		albums = append(albums, newSubsonicAlbum(a.tracks, false))
 	}
 
-	artist := subsonicArtist{
-		ID:   albums[0].ArtistID,
-		Name: albums[0].Artist,
-		// Name: first.,
-		// TODO: CoverArt: first.
-		AlbumCount: len(albums),
-		Albums:     albums,
-	}
+	artistResp := newSubsonicArtist(artist)
+	artistResp.Albums = albums
 
 	resp := struct {
 		subsonicResponse
 		Artist subsonicArtist `xml:"artist" json:"artist"`
 	}{
 		subsonicResponse: subOK(),
-		Artist:           artist,
+		Artist:           artistResp,
 	}
 
 	writeSubsonic(ctx, w, r, resp)
@@ -150,7 +126,6 @@ func subsonicGetArtistInfo(ctx context.Context, w http.ResponseWriter, r *http.R
 		SmallImageUrl  string `xml:"smallImageUrl,omitempty" json:"smallImageUrl,omitempty"`
 		MediumImageUrl string `xml:"mediumImageUrl,omitempty" json:"mediumImageUrl,omitempty"`
 		LargeImageUrl  string `xml:"largeImageUrl,omitempty" json:"largeImageUrl,omitempty"`
-		// <similarArtist id="22" name="...."/>
 	}
 	resp := struct {
 		subsonicResponse
@@ -166,7 +141,6 @@ func subsonicGetArtistInfo(ctx context.Context, w http.ResponseWriter, r *http.R
 	} else {
 		resp.Info = ai
 	}
-	// ai.Biography = "TODO: not implemented yet, sorry~"
 
 	writeSubsonic(ctx, w, r, resp)
 }

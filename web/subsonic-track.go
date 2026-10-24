@@ -3,16 +3,12 @@ package web
 import (
 	"context"
 	"encoding/xml"
-	"fmt"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/guregu/kami"
-
-	"github.com/guregu/intertube/storage"
 	"github.com/guregu/intertube/tube"
 )
 
@@ -21,7 +17,7 @@ type subsonicSong struct {
 	ID          tube.SSID `xml:"id,attr" json:"id"`
 	Parent      string    `xml:"parent,attr,omitempty" json:"parent,omitempty"`
 	Title       string    `xml:"title,attr" json:"title"`
-	Album       string    `xml:"album,attr" json:"album"` // title
+	Album       string    `xml:"album,attr" json:"album"`
 	AlbumID     tube.SSID `xml:"albumId,attr,omitempty" json:"albumId,omitempty"`
 	Artist      string    `xml:"artist,attr" json:"artist"`
 	ArtistID    tube.SSID `xml:"artistId,attr,omitempty" json:"artistId,omitempty"`
@@ -29,7 +25,7 @@ type subsonicSong struct {
 	Genre       string    `xml:"genre,attr,omitempty" json:"genre,omitempty"`
 	IsDir       bool      `xml:"isDir,attr" json:"isDir"`
 	CoverArt    string    `xml:"coverArt,attr,omitempty" json:"coverArt,omitempty"`
-	Created     string    `xml:"created,attr,omitempty" json:"created,omitempty"` // "2004-11-08T23:36:11"
+	Created     string    `xml:"created,attr,omitempty" json:"created,omitempty"`
 	Duration    int       `xml:"duration,attr,omitempty" json:"duration,omitempty"`
 	Bitrate     int       `xml:"bitRate,attr,omitempty" json:"bitRate,omitempty"`
 	Size        int       `xml:"size,attr,omitempty" json:"size,omitempty"`
@@ -70,8 +66,7 @@ func newSubsonicSong(t tube.Track, tagName string) subsonicSong {
 		BookmarkPos: sec2msec(t.Resume),
 		IsDir:       false,
 		IsVideo:     false,
-		// TODO: starred etc
-		Type: "music", // TODO
+		Type:        "music",
 	}
 	if t.Picture.ID != "" {
 		song.CoverArt = t.TrackSSID().String()
@@ -90,15 +85,12 @@ func subsonicGetMusicDirectory(ctx context.Context, w http.ResponseWriter, r *ht
 		panic(err)
 	}
 
-	// <child id="11" parent="10" title="Arrival" artist="ABBA" isDir="true" coverArt="22"/>
 	type subsonicMusicDir struct {
 		XMLName  xml.Name      `xml:"directory" json:"-"`
 		ID       string        `xml:"id,attr" json:"id"`
 		Parent   string        `xml:"parent,attr" json:"parent,omitempty"`
 		Name     string        `xml:"name,attr" json:"name"`
 		Children []interface{} `xml:",omitempty" json:"child,omitempty"`
-		// Folders  []subsonicFolder `xml:",omitempty" json:"child,omitempty"`
-		// Songs    []subsonicSong   `xml:",omitempty" json:"child,omitempty"`
 	}
 
 	resp := struct {
@@ -120,7 +112,6 @@ func subsonicGetMusicDirectory(ctx context.Context, w http.ResponseWriter, r *ht
 		for _, a := range albums {
 			first := a.tracks[0]
 			resp.Dir.ID = first.ArtistSSID().String()
-			// resp.Dir.Parent = "1" // TODO
 			resp.Dir.Name = first.Info.Artist
 
 			dir := subsonicFolder{
@@ -136,18 +127,14 @@ func subsonicGetMusicDirectory(ctx context.Context, w http.ResponseWriter, r *ht
 		}
 		writeSubsonic(ctx, w, r, resp)
 		return
-		// get albums
 	case tube.SSIDAlbum:
 		albums := lib.Albums(organize{
 			ssid: ssid,
 		})
 		for _, a := range albums {
 			first := a.tracks[0]
-			// if first.AlbumSSID() != rawid {
-			// 	continue
-			// }
 			resp.Dir.ID = first.AlbumSSID().String()
-			resp.Dir.Parent = first.ArtistSSID().String() // TODO
+			resp.Dir.Parent = first.ArtistSSID().String()
 			resp.Dir.Name = first.Info.Album
 
 			for _, t := range a.tracks {
@@ -169,7 +156,7 @@ func subsonicGetSong(ctx context.Context, w http.ResponseWriter, r *http.Request
 	u, _ := userFrom(ctx)
 	ssid := tube.ParseSSID(r.FormValue("id"))
 
-	track, err := tube.GetTrack(ctx, u.ID, ssid.ID)
+	track, err := u.GetTrack(ctx, ssid.ID)
 	if err == tube.ErrNotFound {
 		writeSubsonic(ctx, w, r, subErr(70, "The requested data was not found."))
 		return
@@ -187,35 +174,25 @@ func subsonicGetSong(ctx context.Context, w http.ResponseWriter, r *http.Request
 		subsonicResponse: subOK(),
 		Song:             newSubsonicSong(track, "song"),
 	}
-	// DEBUG: hmm
-	// resp.Song.ArtistID = resp.Song.Artist
 
 	writeSubsonic(ctx, w, r, resp)
 }
 
 func subsonicStream(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	id := tube.ParseSSID(r.FormValue("id")).ID
-	ctx = kami.SetParam(ctx, "id", id)
-	fmt.Println("ID", id)
-	fmt.Println(r.Form)
+	r.SetPathValue("id", id)
 	downloadTrack(ctx, w, r)
 }
 
 func subsonicScrobble(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(ctx)
 	id := tube.ParseSSID(r.FormValue("id")).ID
-	// at := time.Now().UTC()
-	// if msec, _ := strconv.ParseInt(r.FormValue("time"), 10, 64); msec > 0 {
-	// at = time.Unix(msec/1000, 0)
-	// }
 
-	track, err := tube.GetTrack(ctx, u.ID, id)
-	if err != nil {
-		writeSubsonic(ctx, w, r, subErr(70, "The requested data was not found."))
-		return
-	}
-
-	if err := track.IncPlays(ctx); err != nil {
+	if _, err := u.IncPlays(ctx, id); err != nil {
+		if err == tube.ErrNotFound {
+			writeSubsonic(ctx, w, r, subErr(70, "The requested data was not found."))
+			return
+		}
 		panic(err)
 	}
 
@@ -230,18 +207,6 @@ func subsonicGetCoverArt(ctx context.Context, w http.ResponseWriter, r *http.Req
 		return
 	}
 	id := tube.ParseSSID(r.FormValue("id"))
-
-	// happy path
-	// if id.Kind == tube.SSIDTrack {
-	// 	track, err := tube.GetTrack(ctx, u.ID, id.ID)
-	// 	if err == tube.ErrNotFound {
-	// 		writeSubsonic(ctx, w, r, subErr(70, err.Error()))
-	// 		return
-	// 	}
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// }
 
 	lib, err := getLibrary(ctx, u)
 	if err != nil {
@@ -273,7 +238,7 @@ func subsonicGetCoverArt(ctx context.Context, w http.ResponseWriter, r *http.Req
 			if err != nil {
 				panic(err)
 			}
-			pl, err := tube.GetPlaylist(ctx, u.ID, pid)
+			pl, err := u.GetPlaylist(ctx, pid)
 			if err != nil {
 				panic(err)
 			}
@@ -284,7 +249,6 @@ func subsonicGetCoverArt(ctx context.Context, w http.ResponseWriter, r *http.Req
 				}
 			}
 		}
-		// hail mary...
 		if !strings.ContainsRune(rawid, '-') {
 			track, _ = lib.TrackByID(rawid)
 		}
@@ -295,12 +259,7 @@ func subsonicGetCoverArt(ctx context.Context, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	href, err := storage.FilesBucket.PresignGet(track.Picture.StorageKey(), thumbnailDownloadTTL)
-	if err != nil {
-		panic(err)
-	}
-
-	http.Redirect(w, r, href, http.StatusTemporaryRedirect)
+	servePicture(ctx, w, r, u, track.Picture.ID)
 }
 
 func subsonicGetRandomSongs(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -314,10 +273,6 @@ func subsonicGetRandomSongs(ctx context.Context, w http.ResponseWriter, r *http.
 		size = 500
 	}
 	match := tube.ParseSSID(r.FormValue("musicFolderId"))
-	// TODO:
-	// genre			Only returns songs belonging to this genre.
-	// fromYear			Only return songs published after or in this year.
-	// toYear			Only return songs published before or in this year.
 
 	tracks, err := u.GetTracks(ctx)
 	if err != nil {
@@ -350,13 +305,9 @@ func subsonicGetRandomSongs(ctx context.Context, w http.ResponseWriter, r *http.
 }
 
 func subsonicGetLyrics(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	// TODO: unstub
 	resp := struct {
 		subsonicResponse
 		Lyrics struct {
-			// Artist string attr
-			// Title string attr
-			// Content chardata
 		} `xml:"lyrics" json:"lyrics"`
 	}{
 		subsonicResponse: subOK(),
@@ -370,7 +321,7 @@ func subsonicStar(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	ids := append(r.Form["id"], append(r.Form["albumId"], r.Form["artistId"]...)...)
 	for _, id := range ids {
-		if err := tube.SetStar(ctx, u.ID, tube.ParseSSID(id), now); err != nil {
+		if err := u.SetStar(ctx, tube.ParseSSID(id), now); err != nil {
 			panic(err)
 		}
 	}
@@ -382,7 +333,7 @@ func subsonicUnstar(ctx context.Context, w http.ResponseWriter, r *http.Request)
 	r.ParseForm()
 	ids := append(r.Form["id"], append(r.Form["albumId"], r.Form["artistId"]...)...)
 	for _, id := range ids {
-		if err := tube.DeleteStar(ctx, u.ID, id); err != nil {
+		if err := u.DeleteStar(ctx, id); err != nil {
 			panic(err)
 		}
 	}

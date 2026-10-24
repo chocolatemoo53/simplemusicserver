@@ -8,7 +8,7 @@
 		<main>
 			<h2>{{tr "recover_title"}}</h2>
 			<p>{{tr "recover_intro"}}</p>
-			<p class="error-msg">{{$.ErrorMsg}}</p>
+			<p class="error-msg">{{$.ErrorMsg | ucfirst}}</p>
 			<form action="/recover" method="POST">
 				<input type="hidden" name="userid" value="{{$.UserID}}">
 				<input type="hidden" name="token" value="{{$.Token}}">
@@ -16,6 +16,9 @@
 					<tr><td><label for="email">{{tr "email"}}:</label></td><td><input type="email" id="email" name="email" autocomplete="email" value="{{$.Email}}" disabled></td></tr>
 					<tr><td><label for="password">{{tr "newpassword"}}:</label></td><td><input type="password" autocomplete="new-password" id="password" name="password" required></td></tr>
 					<tr><td><label for="password-confirm">{{tr "newpasswordconfirm"}}:</label></td><td><input type="password" autocomplete="new-password" id="password-confirm" name="password-confirm" required></td></tr>
+					<tr><td><label for="recovery-key">{{tr "recover_key"}}:</label></td><td><input type="text" id="recovery-key" name="recovery-key" autocomplete="off" spellcheck="false"> <small>{{tr "recover_keyhelp"}}</small></td></tr>
+					<tr><td colspan="2"><b>{{tr "recover_startover"}}</b> {{tr "recover_startoverhelp"}}</td></tr>
+					<tr><td></td><td><input type="text" id="start-over" name="start-over" autocomplete="off" placeholder="delete my library"></td></tr>
 					<tr><td></td><td><input type="submit" value='{{tr "recover_send"}}'></td></tr>
 				</table>
 			</form>

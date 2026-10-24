@@ -19,18 +19,18 @@
 			<h2>{{tr "sync_title"}}</h2>
 			<p>{{tr "sync_intro"}}</p>
 
-			<p>note: beta version. <br>
-				- has a fixed folder structure of <u>Album/Artist/01 Title</u><br>
-				- only downloads for now<br>
-				- can't overwrite local files
+			<p>Note: beta version. <br>
+				- Uses a fixed folder structure of <u>Album/Artist/01 Title</u><br>
+				- Only downloads for now<br>
+				- Can't overwrite local files
 			</p>
 
 			<div>
 				<fieldset>
-					<legend>options</legend>
-					<input id="opt-dl" type="checkbox" checked><label for="opt-dl">download</label>
+					<legend>Options</legend>
+					<input id="opt-dl" type="checkbox" checked><label for="opt-dl">Download</label>
 					<br>
-					<input id="opt-up" type="checkbox"><label for="opt-ul"><s>upload</s> (not working yet)</label>
+					<input id="opt-up" type="checkbox"><label for="opt-ul"><s>Upload</s> (not working yet)</label>
 				</fieldset>
 
 				<div style="margin: 1em;">
@@ -44,10 +44,9 @@
 			</div>
 
 			<div id="sorry" class="error-msg">
-				<h3>⚠️sorry</h3>
+				<h3>Sorry</h3>
 				{{tr "sync_sorry"}} 
-				<br><a href="https://developer.mozilla.org/en-US/docs/Web/API/Window/showDirectoryPicker#browser_compatibility" target="_blank" class="navlink">supported browsers</a>
-				🙇‍🙇‍
+				<br><a href="https://developer.mozilla.org/en-US/docs/Web/API/Window/showDirectoryPicker#browser_compatibility" target="_blank" class="navlink">Supported browsers</a>
 			</div>
 
 			<div id="tables">
@@ -186,9 +185,8 @@
 			    incProgress();
 			    result.local.set(id, f);
 			    if (INDEX[id]) {
-			    	// track already uploaded
 			    	console.log("skip", id);
-			    	MSG.textContent = "🆗 " + INDEX[id].Path;
+			    	MSG.textContent = "ok: " + INDEX[id].Path;
 			    	continue;
 			    }
 			    f.filename = path.concat(f.name).join("/");
@@ -217,7 +215,7 @@
 				}
 			}
 			Promise.all(wait).then(function() {
-				ICON.textContent += "👍"
+				ICON.textContent += "[ok]"
 				MSG.textContent = '{{tr "sync_done"}}'
 				BTN.disabled = false;
 			})
@@ -235,19 +233,13 @@
 				if (!overwrite && file.size != 0 && file.lastModified != meta.LastMod) {
 					return false;
 				}
-				// console.log(file, "VS", meta);
 				var w = await fh.createWritable();
 				var resp = await fetch(meta.URL);
 				await resp.body.pipeTo(w);
-				// var blob = await fetch(meta.URL).then(resp => resp.blob());
-				// await w.write(blob);
 			} catch(ex) {
 				console.log("failed", ex, meta, fh);
 			} finally {
-				// if (w) {
-				// 	await w.close();
-				// }
-				MSG.textContent = "🆗 " + meta.Path;
+				MSG.textContent = "ok: " + meta.Path;
 				incProgress();
 			}
 		}
@@ -270,7 +262,7 @@
 			PROGRESS.max = _max;
 		}
 		function incFail() {
-			ICON.textContent += "❌"
+			ICON.textContent += "[failed]"
 		}
 
 		if (!window.showDirectoryPicker) {
@@ -283,7 +275,7 @@
 				file.name.endsWith(".mp3") || file.name.endsWith(".flac") || file.name.endsWith(".m4a");
 		}
 
-		function buf2hex(buffer) { // buffer is an ArrayBuffer
+		function buf2hex(buffer) {
   			return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
 		}
 

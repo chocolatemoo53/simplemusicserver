@@ -1,0 +1,56 @@
+domain = "music.example.com"
+admin_ids = [1]
+secret_key = ""
+real_ip_header = "X-Forwarded-For"
+
+[db]
+path = "/data/tube.db"
+
+[storage]
+type = "s3"
+files_bucket = "music-files"
+access_key_id = ""
+access_key_secret = ""
+region = "us-east-1"
+endpoint = "https://s3.example.com"
+
+[replica]
+type = "s3"
+bucket = ""
+access_key_id = ""
+access_key_secret = ""
+region = ""
+endpoint = ""
+lock_days = 7
+storage_class = "GLACIER"
+delay_days = 30
+
+[uploads]
+concurrency = 2
+
+[cache]
+dir = "/data/cache"
+max_gb = 20
+
+[billing]
+free_gb = 5
+per_gb_month_usd = 0.02
+grace_days = 30
+lock_days = 90
+refund_days = 90
+refund_fee_percent = 0
+manual_payment = ""
+
+[btcpay]
+url = ""
+store_id = ""
+api_key = ""
+webhook_secret = ""
+
+[mail]
+host = ""
+port = 587
+tls = "starttls"
+username = ""
+password = ""
+from = "Music <noreply@music.example.com>"

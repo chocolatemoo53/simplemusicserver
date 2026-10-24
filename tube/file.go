@@ -1,33 +1,28 @@
 package tube
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"path"
 	"strconv"
 	"time"
-
-	"github.com/guregu/dynamo"
-	"golang.org/x/net/context"
-	// "github.com/aws/aws-sdk-go/service/cloudfront/sign"
 )
 
 type File struct {
-	ID     string `dynamo:",hash" index:"UserID-ID-index,range"`
-	UserID int    `index:"UserID-ID-index,hash"`
-
-	Size     int64
-	Type     string
+	ID       string
+	UserID   int
 	Name     string
 	Ext      string
-	Time     time.Time
+	Type     string
+	Size     int64
 	LocalMod int64
-	Queued   time.Time
-	Started  time.Time
-	Finished time.Time
-	Ready    bool
-	Deleted  bool
+	Time     time.Time
+	TrackID  string
+}
 
-	TrackID string
+func fileAD(userID int, id string) string {
+	return fmt.Sprintf("files:%d:%s", userID, id)
 }
 
 func NewFile(userID int, filename string, size int64) File {
@@ -36,7 +31,7 @@ func NewFile(userID int, filename string, size int64) File {
 	if err != nil {
 		panic(err)
 	}
-	f := File{
+	return File{
 		ID:     strconv.FormatInt(now.UnixNano(), 36) + "-" + garb,
 		UserID: userID,
 		Name:   filename,
@@ -44,152 +39,66 @@ func NewFile(userID int, filename string, size int64) File {
 		Size:   size,
 		Time:   now,
 	}
-	return f
 }
 
-func (f File) Create(ctx context.Context) error {
-	files := dynamoTable("Files")
-	// users := dynamoTable("Users")
-
-	err := files.Put(f).If("attribute_not_exists('ID')").Run()
-	return err
-
-	// do this in Track instead
-	// return users.Update("ID", f.UserID).
-	// 	Add("Usage", f.Size).
-	// 	If("attribute_exists('ID')").
-	// 	Run()
-}
-
-func (f *File) Finish(ctx context.Context, contentType string, size int64) error {
-	files := dynamoTable("Files")
-	err := files.Update("ID", f.ID).
-		Set("Ready", true).
-		Set("Finished", time.Now().UTC()).
-		Set("Size", size).
-		Set("Type", contentType).
-		If("attribute_exists('ID')").
-		Value(f)
-	return err
-}
-
-// dont use TODO delete
-func (f File) Delete(ctx context.Context) error {
-	files := dynamoTable("Files")
-	users := dynamoTable("Users")
-	// tx := db.WriteTx()
-	// tx.Delete(files.Delete("ID", f.ID))
-	err := files.Update("ID", f.ID).
-		Set("Deleted", true).
-		If("attribute_exists('ID')").Run()
+func (u User) saveFile(ctx context.Context, q querier, f File) error {
+	if u.keys == nil {
+		return ErrLocked
+	}
+	data, err := u.keys.SealJSON(f, fileAD(u.ID, f.ID))
 	if err != nil {
 		return err
 	}
-	return users.Update("ID", f.UserID).
-		SetExpr("'Usage' = 'Usage' - ?", f.Size).
-		If("attribute_exists('ID')").Run()
+	_, err = q.ExecContext(ctx,
+		`INSERT INTO files (id, user_id, created, data) VALUES (?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET data = excluded.data WHERE files.user_id = excluded.user_id`,
+		f.ID, u.ID, f.Time.UnixNano(), data)
+	return err
 }
 
-func (f *File) SetTrackID(tID string) error {
-	files := dynamoTable("Files")
-	return files.Update("ID", f.ID).
-		Set("TrackID", tID).
-		Value(f)
+func (u User) CreateFile(ctx context.Context, f File) error {
+	f.UserID = u.ID
+	return u.saveFile(ctx, db, f)
 }
 
-func (f *File) SetQueued(ctx context.Context, at time.Time) error {
-	files := dynamoTable("Files")
-	return files.Update("ID", f.ID).
-		Set("Queued", at).
-		ValueWithContext(ctx, f)
+func (u User) GetFile(ctx context.Context, id string) (File, error) {
+	if u.keys == nil {
+		return File{}, ErrLocked
+	}
+	var data []byte
+	err := db.QueryRowContext(ctx, `SELECT data FROM files WHERE id = ? AND user_id = ?`, id, u.ID).Scan(&data)
+	if err != nil {
+		return File{}, notFound(err)
+	}
+	var f File
+	if err := u.keys.OpenJSON(data, fileAD(u.ID, id), &f); err != nil {
+		return File{}, err
+	}
+	return f, nil
 }
 
-func (f *File) SetStarted(ctx context.Context, at time.Time) error {
-	files := dynamoTable("Files")
-	return files.Update("ID", f.ID).
-		Set("Started", at).
-		ValueWithContext(ctx, f)
+func (u User) SetFileTrack(ctx context.Context, id, trackID string) error {
+	return inTx(ctx, func(tx *sql.Tx) error {
+		f, err := u.GetFile(ctx, id)
+		if err != nil {
+			return err
+		}
+		f.TrackID = trackID
+		return u.saveFile(ctx, tx, f)
+	})
 }
 
-func (f File) Path() string {
-	return "up/" + f.ID
+func DeleteStaleFiles(ctx context.Context, before time.Time) (int64, error) {
+	res, err := db.ExecContext(ctx, `DELETE FROM files WHERE created < ?`, before.UnixNano())
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (f File) Status() string {
-	switch {
-	case f.Ready, !f.Finished.IsZero():
+	if f.TrackID != "" {
 		return "done"
-	case !f.Started.IsZero():
-		return "processing"
-	case !f.Queued.IsZero():
-		return "queued"
-	default:
-		return "uploading"
 	}
-}
-
-func (f File) Glyph() string {
-	switch f.Type {
-	case "audio/mpeg", "audio/ogg", "audio/aac", "audio/opus", "audio/wave", "audio/wav",
-		"audio/midi", "audio/x-midi":
-		return "♫"
-	case "video/mpeg", "video/ogg", "video/quicktime", "video/x-matroska",
-		"video/x-msvideo", "video/mp2t", "video/3gpp", "video/3gpp2",
-		"image/tiff":
-		return "❀"
-	case "text/plain", "application/msword", "application/rtf",
-		"application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-		return "✎"
-	case "application/zip", "application/gzip", "application/x-bzip", "application/x-bzip2",
-		"application/vnd.rar", "application/x-tar", "application/x-7z-compressed":
-		return "⬢"
-	}
-	return "❐"
-}
-
-func GetFile(ctx context.Context, id string) (File, error) {
-	table := dynamoTable("Files")
-	var f File
-	err := table.Get("ID", id).Consistent(true).One(&f)
-	return f, err
-}
-
-func GetFiles(ctx context.Context, ids ...string) ([]File, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	table := dynamoTable("Files")
-	var files []File
-	batch := table.Batch("ID").Get()
-	for _, id := range ids {
-		batch.And(dynamo.Keys{id})
-	}
-	iter := batch.Iter()
-	var f File
-	for iter.Next(&f) {
-		if f.Deleted {
-			fmt.Println("SKIPPING FILE", f)
-			continue
-		}
-		files = append(files, f)
-	}
-	err := iter.Err()
-	if err == dynamo.ErrNotFound {
-		err = nil
-	}
-	return files, err
-}
-
-func GetFilesByUser(ctx context.Context, userID string) ([]File, error) {
-	table := dynamoTable("Files")
-	var files []File
-	err := table.Get("UserID", userID).
-		Index("UserID-ID-index").
-		Filter("Deleted <> ?", true).
-		Order(dynamo.Descending).
-		All(&files)
-	if err == dynamo.ErrNotFound {
-		err = nil
-	}
-	return files, err
+	return "uploading"
 }

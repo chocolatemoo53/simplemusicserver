@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+	<head>
+		{{render "_head" $}}
+		<title>{{tr "titleprefix"}}{{tr "recovery_title"}}</title>
+	</head>
+	<body>
+		<main>
+			<h2>{{tr "recovery_title"}}</h2>
+			<p>{{tr "recovery_intro"}}</p>
+			<p><code class="secret">{{$.RecoveryKey}}</code></p>
+			<p><b>{{tr "recovery_store"}}</b></p>
+			<p><a href="{{$.Next}}">{{tr "recovery_continue"}}</a></p>
+		</main>
+	</body>
+</html>
