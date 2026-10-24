@@ -75,7 +75,7 @@ Steps:
 1. Copy `config.example.toml` to `config.toml` and fill it in.
 2. Generate a secret key with `openssl rand -hex 32` and put it in `secret_key`. Keep a copy somewhere safe. Without it, compatibility app passwords and backups can't be opened.
 3. Copy `.env.example` to `.env` and fill in where Litestream should back up the database.
-4. Start it with `docker compose up -d`. It listens on `127.0.0.1:8000`.
+4. Start it with `docker compose up -d`. It listens on `127.0.0.1:8000`. To skip building, set `image: ghcr.io/chocolatemoo53/simplemusicserver:latest` in `docker-compose.yml` instead of `build: .`.
 5. Point your reverse proxy at it. The proxy should set `X-Forwarded-For`, which the login limits use.
 6. Sign up. The first account is the admin, set by `admin_ids`.
 
