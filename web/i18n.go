@@ -12,6 +12,8 @@ import (
 var translations *i18n.Bundle
 var defaultLocalizer *i18n.Localizer
 
+var SiteText map[string]string
+
 func loadTranslations() {
 	assets, err := assetsDir()
 	if err != nil {
@@ -20,6 +22,14 @@ func loadTranslations() {
 	translations = i18n.NewBundle(language.English)
 	translations.RegisterUnmarshalFunc("toml", toml.Unmarshal)
 	translations.MustLoadMessageFile(filepath.Join(assets, "text", "en.toml"))
+	for id, text := range SiteText {
+		if text == "" {
+			continue
+		}
+		if err := translations.AddMessages(language.English, &i18n.Message{ID: id, Other: text}); err != nil {
+			panic(err)
+		}
+	}
 	defaultLocalizer = i18n.NewLocalizer(translations, language.English.String())
 }
 

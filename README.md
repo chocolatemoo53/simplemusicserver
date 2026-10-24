@@ -81,6 +81,7 @@ Steps:
 
 Optional sections in `config.toml`:
 
+- `[site]` sets the service name, your contact details and the providers named on the terms and privacy pages. Anything left empty shows a placeholder.
 - `[mail]` sends password resets and sign-up confirmations. With mail set up, the free storage only unlocks after a user confirms their e-mail.
 - `[replica]` keeps a second, locked copy of every file with another provider. Each copy is locked for `lock_days`, so it can't be deleted early, even with stolen keys.
 - `[billing]` sets the free storage and the price per GB.

@@ -3,6 +3,21 @@ admin_ids = [1]
 secret_key = ""
 real_ip_header = "X-Forwarded-For"
 
+[site]
+name = ""
+operator = ""
+contact = ""
+security_contact = ""
+dmca_agent = ""
+governing_law = ""
+payment_methods = ""
+
+[site.providers]
+hosting = ""
+storage = ""
+replica = ""
+mail = ""
+
 [db]
 path = "/data/tube.db"
 

@@ -38,6 +38,7 @@ func main() {
 	}
 
 	web.AdminIDs = cfg.AdminIDs
+	web.SiteText = cfg.siteText()
 	web.DebugMode = *debugFlag
 	web.AssetsDir = *assetsFlag
 

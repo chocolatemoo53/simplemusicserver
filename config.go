@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -61,6 +63,21 @@ type Config struct {
 		APIKey        string `toml:"api_key"`
 		WebhookSecret string `toml:"webhook_secret"`
 	} `toml:"btcpay"`
+	Site struct {
+		Name            string `toml:"name"`
+		Operator        string `toml:"operator"`
+		Contact         string `toml:"contact"`
+		SecurityContact string `toml:"security_contact"`
+		DMCAAgent       string `toml:"dmca_agent"`
+		GoverningLaw    string `toml:"governing_law"`
+		PaymentMethods  string `toml:"payment_methods"`
+		Providers       struct {
+			Hosting string `toml:"hosting"`
+			Storage string `toml:"storage"`
+			Replica string `toml:"replica"`
+			Mail    string `toml:"mail"`
+		} `toml:"providers"`
+	} `toml:"site"`
 	Mail struct {
 		Host     string `toml:"host"`
 		Port     int    `toml:"port"`
@@ -108,11 +125,36 @@ func readConfig(path string) (Config, error) {
 	if err != nil {
 		return cfg, fmt.Errorf("failed to read config: %w", err)
 	}
-	if err := toml.Unmarshal(raw, &cfg); err != nil {
+	if err := toml.NewDecoder(bytes.NewReader(raw)).DisallowUnknownFields().Decode(&cfg); err != nil {
+		var strict *toml.StrictMissingError
+		if errors.As(err, &strict) {
+			return cfg, fmt.Errorf("unknown settings in %s:\n%s", path, strict.String())
+		}
 		return cfg, err
 	}
 	if cfg.DB.Path == "" {
 		cfg.DB.Path = "data/tube.db"
 	}
 	return cfg, nil
+}
+
+func (cfg Config) siteText() map[string]string {
+	site := cfg.Site
+	text := map[string]string{
+		"service_name":             site.Name,
+		"tos_operator":             site.Operator,
+		"tos_contact":              site.Contact,
+		"tos_security_contact":     site.SecurityContact,
+		"tos_dmca_agent":           site.DMCAAgent,
+		"tos_law":                  site.GoverningLaw,
+		"tos_payment_methods":      site.PaymentMethods,
+		"privacy_hosting_provider": site.Providers.Hosting,
+		"privacy_storage_provider": site.Providers.Storage,
+		"privacy_replica_provider": site.Providers.Replica,
+		"privacy_mail_provider":    site.Providers.Mail,
+	}
+	if site.Name != "" {
+		text["titleprefix"] = site.Name + " - "
+	}
+	return text
 }
