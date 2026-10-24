@@ -21,9 +21,7 @@ import (
 	"github.com/guregu/intertube/tube"
 )
 
-const (
-	version = "0.2.0"
-)
+var version = "0.2.0"
 
 var defaultHost string
 
