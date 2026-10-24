@@ -24,6 +24,13 @@ Everything in your library is encrypted at rest. That covers:
 
 The storage bucket, the database and its backups only hold encrypted data. Stored files get random names, so the bucket doesn't show what they are.
 
+<p>
+  <img src="docs/images/desktop.png" width="72%" alt="Desktop mockup of the home page with recently added albums, recently played tracks and the player bar">
+  <img src="docs/images/mobile.png" width="24%" alt="Mobile mockup of the home page in the dark theme">
+</p>
+
+<p><sub>Early designs for the web player.</sub></p>
+
 **Each account has its own key.** It is created when you sign up. The server never stores it in a usable form. Instead, it keeps locked copies of it:
 
 - one for your password, locked with Argon2id
