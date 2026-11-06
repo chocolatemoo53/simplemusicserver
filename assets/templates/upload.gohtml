@@ -145,22 +145,14 @@
 		<main>
 			<h2>{{tr "upload_title"}}</h2>
 			<p>{{tr "upload_intro"}}</p>
-			<p>{{tr "currentusage"}}: <b>{{$.User.Usage | bytesize}}</b> · {{tr "buy_monthly"}}: <b>{{$.User.MonthlyCost}}</b></p>
-			{{render "_standing" $}}
-			{{if (not (canupload $.User))}}
-				{{if $.User.NeedsVerification}}
+			<p>{{tr "currentusage"}}: <b>{{$.User.Usage | bytesize}}</b></p>
+			{{if $.User.NeedsVerification}}
 				<p class="error-msg">
 					<b>{{tr "verify_needed"}}</b><br>
 					{{tr "verify_needed_explain" $.User.Email}}<br>
 					<a href="/settings#email">{{tr "verify_resend_link"}}</a>
 				</p>
-				{{else}}
-				<p class="error-msg">
-					<b>{{tr "upload_full"}}</b><br>
-					{{tr "upload_fullexplain" (pricing.FreeBytes | bytesize)}}<br>
-					<a href="/buy/">{{tr "upload_cant"}}</a>
-				</p>
-				{{end}}
+
 			{{end}}
 			<section class="dropzone" id="dropzone" aria-labelledby="dropzone-title">
 				{{render "_icon" "upload"}}
@@ -203,7 +195,7 @@
 		var RETRY_DELAY = 500;
 		var RETRY_MAX = 5;
 		var DUPES = {{$.Dupes}};
-		var CONCURRENCY = 5;
+		var CONCURRENCY = {{$.Concurrency}};
 		var JOBS = [];
 		var RUNNING = new Set();
 		var STATS = {

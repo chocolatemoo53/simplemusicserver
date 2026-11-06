@@ -18,15 +18,7 @@
 	<div class="shell-foot">
 		<div class="shell-storage">
 			<strong class="figures">{{tr "shell_stored" ($me.Usage | bytesize)}}</strong>
-			{{if canpay}}
-				{{$state := state $me}}
-				{{if (or (eq $state "grace") (eq $state "locked") (eq $state "cleanup"))}}
-					<span class="warn">{{tr "shell_balance_out"}}</span>
-				{{else}}
-					<span class="figures">{{tr "shell_balance" $me.Balance}}{{with paiduntil $me}}, {{tr "shell_until" (. | date)}}{{end}}</span>
-				{{end}}
-				<a href="/buy/">{{tr "nav_credit"}}</a>
-			{{end}}
+
 		</div>
 		<form class="lock" action="/logout" method="POST">
 			<p class="lock-title">{{render "_icon" "unlock"}}{{tr "lock_title"}}</p>

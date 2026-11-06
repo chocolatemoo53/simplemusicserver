@@ -4,13 +4,13 @@
 		{{render "_head" $}}
 		<title>{{tr "titleprefix"}}{{tr "subsonic_title"}}</title>
 		<style>
-			p {
+			main p {
 				padding-left: 1em;
 			}
 			#help:target {
 				background: var(--hi-bg);
 			}
-            h3, img {
+            main h3, main img {
                 margin-left: 1em;
                 margin-top: 1em;
             }
@@ -35,7 +35,7 @@
             }
             table td:nth-child(2) {
             }
-            img {
+            main img {
                  max-width: calc(100% - 2em);
                  max-height:100vh;
             }
@@ -111,7 +111,7 @@
                 <h3 id="auth">{{tr "subsonic_auth"}}</h3>
                 <ul>
                     <li>Music apps log in with an app password, never your account password. Create one per device in <a href="/settings#apps">settings</a> and revoke it there if the device is lost.</li>
-                    <li>App passwords only work for music apps. They cannot sign in to this site or access billing.</li>
+                    <li>App passwords only work for music apps. They cannot sign in to this site or change account settings.</li>
                     <li>App passwords are <b>strict</b> by default: your library can only be unlocked while that device is connected. Enable plain-text password or API key mode in your app settings. If your app lacks support, use a <b>compatibility</b> app password instead.</li>
                     <li>Always connect over HTTPS. Some apps transmit credentials in the URL query string.</li>
                 </ul>
@@ -146,7 +146,7 @@
             </p>
 
             <h3 id="playsub">play:Sub</h3>
-            <p>Download: <a href="https://apps.apple.com/us/app/play-sub-music-streamer/id955329386" target="_blank" class="navlink">App Store</a> ($$$)</p>
+            <p>Download: <a href="https://apps.apple.com/us/app/play-sub-music-streamer/id955329386" target="_blank" class="navlink">App Store</a></p>
             <p>
                 <ol>
                     <li>Tap the "play:Sub" menu icon on the bottom right.</li>
@@ -171,7 +171,7 @@
             </p>
 
             <h3 id="symfonium">Symfonium</h3>
-            <p>Download: <a href="https://symfonium.app" target="_blank" class="navlink">symfonium.app</a> (paid)</p>
+            <p>Download: <a href="https://symfonium.app" target="_blank" class="navlink">symfonium.app</a></p>
             <p>Password: a <b>strict</b> app password if you turn on its plain-text (legacy) password option in the server settings; otherwise use a <b>compatibility</b> one.</p>
             <p>
                 <ol>

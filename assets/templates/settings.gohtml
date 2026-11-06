@@ -77,35 +77,15 @@
 				{{$opt := $.User.Display}}
 				<table>
 					<tbody class="header">
-						<tr id="sub"><th colspan="2">{{tr "settings_billing"}}</th></tr>
+						<tr><th colspan="2">{{tr "settings_storage"}}</th></tr>
 					</tbody>
 					<tbody>
-						<tr>
-							<td colspan="2">{{render "_standing" $}}</td>
-						</tr>
+
 						<tr>
 							<td>{{tr "settings_usage"}}:</td>
-							<td>{{$.User.Usage | bytesize}} ({{tr "buy_free" (pricing.FreeBytes | bytesize)}})</td>
+							<td>{{$.User.Usage | bytesize}}</td>
 						</tr>
-						<tr>
-							<td>{{tr "buy_balance"}}:</td>
-							<td><b>{{$.User.Balance}}</b> (<a href="/buy/" class="navlink">{{tr "settings_buylink"}}</a>)</td>
-						</tr>
-						<tr>
-							<td>{{tr "buy_monthly"}}:</td>
-							<td>{{$.User.MonthlyCost}}</td>
-						</tr>
-						{{with paiduntil $.User}}
-						<tr>
-							<td>{{tr "buy_lasts"}}:</td>
-							<td>{{. | date}}</td>
-						</tr>
-						{{end}}
-						{{if and (not (canupload $.User)) (not $.User.NeedsVerification)}}
-						<tr>
-							<td colspan="2" class="error-msg">{{tr "settings_storagefull"}}</td>
-						</tr>
-						{{end}}
+
 					</tbody>
 
 
@@ -253,7 +233,7 @@
 
 			<h3 id="delete" class="error-msg">{{tr "delete_title"}}</h3>
 			<p>{{tr "delete_explain"}}</p>
-			{{if $.Refundable}}<p><b>{{tr "delete_refund" $.Refundable}}</b> <a href="/buy/#refunds">{{tr "refund_title"}}</a></p>{{end}}
+
 			<form action="/settings/delete" method="POST">
 				<table>
 					<tr>

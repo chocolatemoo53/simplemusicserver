@@ -10,7 +10,7 @@ contact = ""
 security_contact = ""
 dmca_agent = ""
 governing_law = ""
-payment_methods = ""
+
 
 [site.providers]
 hosting = ""
@@ -47,20 +47,6 @@ concurrency = 2
 dir = "/data/cache"
 max_gb = 20
 
-[billing]
-free_gb = 5
-per_gb_month_usd = 0.02
-grace_days = 30
-lock_days = 90
-refund_days = 90
-refund_fee_percent = 0
-manual_payment = ""
-
-[btcpay]
-url = ""
-store_id = ""
-api_key = ""
-webhook_secret = ""
 
 [mail]
 host = ""

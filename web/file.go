@@ -110,12 +110,8 @@ func uploadStart(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		renderText(w, "File too big. The maximum size is "+strconv.FormatInt(maxFileSize/1000/1000, 10)+"MB", http.StatusBadRequest)
 		return
 	}
-	if !u.CanStore(size, time.Now()) {
-		if u.NeedsVerification() {
-			renderText(w, errVerifyEmail, http.StatusForbidden)
-			return
-		}
-		renderText(w, errStorageFull, http.StatusBadRequest)
+	if u.NeedsVerification() {
+		renderText(w, errVerifyEmail, http.StatusForbidden)
 		return
 	}
 

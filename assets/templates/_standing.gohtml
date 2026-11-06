@@ -1,8 +1,0 @@
-{{$state := state $.User}}
-{{if (eq $state "grace")}}
-	<p class="error-msg">{{tr "state_grace" (lockdate $.User | date)}} <a href="/buy/">{{tr "settings_buylink"}}</a></p>
-{{else if (eq $state "locked")}}
-	<p class="error-msg">{{tr "state_locked"}} <a href="/buy/">{{tr "settings_buylink"}}</a></p>
-{{else if (eq $state "cleanup")}}
-	<p class="error-msg"><b>{{tr "state_cleanup"}}</b> <a href="/buy/">{{tr "settings_buylink"}}</a></p>
-{{end}}

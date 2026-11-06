@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/guregu/intertube/email"
 	"github.com/guregu/intertube/tube"
@@ -22,7 +21,6 @@ var validThemes = map[string]bool{
 
 type settingsFormData struct {
 	User         tube.User
-	Refundable   tube.Micros
 	AppPasswords []tube.AppPassword
 	NewAppPass   string
 	NewAppName   string
@@ -37,9 +35,6 @@ func renderSettings(ctx context.Context, w http.ResponseWriter, data settingsFor
 		panic(err)
 	}
 	data.AppPasswords = list
-	if refundable, err := tube.Refundable(ctx, data.User, time.Now().UTC()); err == nil {
-		data.Refundable = refundable
-	}
 	renderTemplate(ctx, w, "settings", data, code)
 }
 

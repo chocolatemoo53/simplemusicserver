@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
-	"time"
 
 	"github.com/guregu/intertube/tube"
 )
@@ -19,13 +18,11 @@ func homepage(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	}{
 		User: u,
 	}
-	if !u.Locked(time.Now()) {
-		tracks, err := u.GetTracks(ctx)
-		if err != nil {
-			log.Println("homepage:", err)
-		}
-		data.Home = summarize(tracks)
+	tracks, err := u.GetTracks(ctx)
+	if err != nil {
+		log.Println("homepage:", err)
 	}
+	data.Home = summarize(tracks)
 	renderTemplate(ctx, w, "index", data, http.StatusOK)
 }
 

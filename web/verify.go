@@ -12,6 +12,8 @@ import (
 	"github.com/guregu/intertube/tube"
 )
 
+const errVerifyEmail = "Confirm your e-mail address to upload music. Check your inbox, or resend the link from settings."
+
 func init() {
 	handle("GET /verify", verifyEmail)
 	handle("POST /settings/verify", resendVerification)

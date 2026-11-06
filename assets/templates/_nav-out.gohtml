@@ -3,8 +3,6 @@
 	<ul>
 		<li><a href="/login" {{if (eq path "/login")}}aria-current="page"{{end}}>{{tr "nav_login"}}</a></li>
 		<li><a href="/register" {{if (eq path "/register")}}aria-current="page"{{end}}>{{tr "nav_register"}}</a></li>
-	{{if canpay}}
-		<li><a href="/buy/" {{if (eq path "/buy/")}}aria-current="page"{{end}}>{{tr "nav_pricing"}}</a></li>
-	{{end}}
+
 	</ul>
 </nav>

@@ -38,11 +38,13 @@ func uploadForm(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		User  tube.User
-		Dupes map[string][]meta
+		User        tube.User
+		Dupes       map[string][]meta
+		Concurrency int
 	}{
-		User:  u,
-		Dupes: dupes,
+		User:        u,
+		Dupes:       dupes,
+		Concurrency: cap(uploadSlots),
 	}
 	renderTemplate(ctx, w, "upload", data, http.StatusOK)
 }

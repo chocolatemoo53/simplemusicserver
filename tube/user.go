@@ -27,12 +27,6 @@ type User struct {
 	Usage  int64
 	Tracks int
 
-	Balance    Micros
-	LapsedAt   time.Time
-	Notified   int
-	NotifiedAt time.Time
-	Exempt     bool
-
 	Theme   string
 	Display DisplayOptions
 
@@ -136,7 +130,7 @@ func (u User) Verified() bool {
 }
 
 func (u User) NeedsVerification() bool {
-	return RequireVerifiedEmail && !u.Verified() && !u.Exempt
+	return RequireVerifiedEmail && !u.Verified()
 }
 
 func (u *User) StartVerification(ctx context.Context) (string, error) {

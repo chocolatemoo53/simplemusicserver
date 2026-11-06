@@ -19,10 +19,9 @@ func init() {
 	use("/", discover)
 	use("/", allowGuest(
 		"/login", "/register", "/forgot", "/recover", "/verify",
-		"/terms", "/privacy", "/buy/", "/subsonic",
+		"/terms", "/privacy", "/subsonic",
 		"/favicon.svg", "/apple-touch-icon.png",
-		"/api/v0/login",
-		"/external/btcpay"))
+		"/api/v0/login"))
 	use("/", allowGuestPrefix("/fonts/"))
 	use("/", requireLogin)
 
@@ -55,9 +54,6 @@ func init() {
 	handle("GET /sync", syncForm)
 	handle("GET /export/library.zip", exportLibrary)
 
-	use("/music", requireStanding)
-	use("/music/", requireStanding)
-	use("/rest/", requireStanding)
 	use("/music", cacheHeaders)
 	use("/music/", cacheHeaders)
 	handle("GET /music", showMusic)
@@ -76,10 +72,6 @@ func init() {
 
 	handle("GET /dl/tracks/{id}", downloadTrack)
 
-	use("/playlist", requireStanding)
-	use("/playlist/", requireStanding)
-	use("/playlists", requireStanding)
-	use("/playlists/", requireStanding)
 	handle("GET /playlist", func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/music/playlists", http.StatusFound)
 	})
@@ -107,19 +99,10 @@ func init() {
 	handle("POST /settings/mail-test", sendTestMail)
 	handle("POST /settings/app-passwords/{id}/revoke", revokeAppPassword)
 
-	handle("GET /buy/{$}", buyForm)
-	handle("POST /buy/checkout", topUp)
-	handle("POST /buy/refund", requestRefund)
-	handle("GET /buy/success", topUpDone)
-
 	use("/admin/", requireAdmin)
 	handle("GET /admin/{$}", adminIndex)
 	handle("GET /admin/user/{id}", adminUser)
-	handle("POST /admin/user/{id}/credit", adminCredit)
-	handle("POST /admin/user/{id}/exempt", adminExempt)
 	handle("POST /admin/user/{id}/delete", adminDelete)
-
-	handle("POST /external/btcpay", btcpayWebhook)
 }
 
 func init() {

@@ -108,36 +108,9 @@ func parseTemplates() *template.Template {
 		"me":        func() tube.User { return tube.User{} },
 		"isadmin":   func() bool { return false },
 
-		"payment": paymentEnabled,
-		"canpay":  canPay,
-		"manualpay": func() string {
-			return ManualPayment
-		},
 		"ucfirst": ucfirst,
 		"domain": func() string {
 			return Domain
-		},
-		"pricing": func() tube.Pricing {
-			return tube.Prices
-		},
-		"state": func(u tube.User) string {
-			return string(u.State(time.Now()))
-		},
-		"paiduntil": func(u tube.User) any {
-			if t := u.PaidUntil(time.Now()); !t.IsZero() {
-				return t
-			}
-			return nil
-		},
-		"canupload": func(u tube.User) bool {
-			return u.CanStore(1, time.Now())
-		},
-		"lockdate": func(u tube.User) time.Time {
-			return u.LapsedAt.Add(daysDur(tube.Prices.GraceDays))
-		},
-		"formatusd": formatDecimal,
-		"monthlycost": func(gb int64) tube.Micros {
-			return tube.Prices.MonthlyCost(tube.Prices.FreeBytes + gb*1_000_000_000)
 		},
 
 		"blankzero": func(i int) string {

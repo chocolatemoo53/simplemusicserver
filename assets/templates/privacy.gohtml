@@ -15,11 +15,11 @@
 	<body>
 		{{render "_nav" $}}
 		{{$s := tr "service_name"}}
-		{{$p := pricing}}
+
 		<main>
 			<h2>{{tr "privacy_title"}}</h2>
 			<p><small>Last updated {{tr "privacy_updated"}} · See also: <a href="/terms">{{tr "tos_title"}}</a></small></p>
-			<p>{{$s}} collects as little about you as it can, keeps it safe, and never sells or abuses it.</p>
+			<p>{{$s}} hosts your personal music library. It collects as little about you as it can, keeps it safe, and never sells or abuses it.</p>
 
 			<section>
 				<h3>What's collected</h3>
@@ -27,7 +27,7 @@
 					<li>Your e-mail address, to run your account and send important service messages.</li>
 					<li>Your password, which is never stored in readable form.</li>
 					<li>Your library: files, covers, titles, lyrics, playlists and stars, all encrypted (see Encryption below).</li>
-					<li>Account records the service needs to run: your balance, payment history, storage used, and the number and size of your files. These aren't encrypted, so billing and cleanup can work without unlocking your library.</li>
+					<li>Account records the service needs to run: storage used, and the number and size of your files. These aren't encrypted, so storage management can work without unlocking your library.</li>
 					<li>If you add one, your OpenPGP public key, so e-mails to you can be encrypted.</li>
 					<li>IP addresses are not stored, and there are no access logs. The server's error logs identify accounts only by an internal number, and they're rotated within days.</li>
 					<li>There are no third-party analytics, trackers or ads of any kind.</li>
@@ -42,27 +42,14 @@
 					<li>Login sessions and password reset links are stored only as hashes, so a leaked database can't be used to take over your account.</li>
 					<li>Your recovery key is shown once and never stored in readable form. Without your password or recovery key, your library can't be recovered.</li>
 					<li>App passwords are strict by default: a strict app password leaves nothing readable on the server. A compatibility app password works with more apps, but the server keeps a copy that can unlock your library. You choose which kind for each device.</li>
-					<li>Not encrypted: your e-mail address, balance and payment history, when you signed up and were last active, the number, size and upload times of your files, and the names you give your app passwords and the day each was last used.</li>
-				</ul>
-			</section>
-
-			<section>
-				<h3>Payments</h3>
-				<ul>
-					{{if payment}}
-					<li>Payments go through a BTCPay Server that {{$s}} runs itself. No outside payment company is involved, and no card or bank details are ever collected.</li>
-					{{else}}
-					<li>Payments are sent directly to {{$s}} and added to your balance by hand. Each one is recorded with its amount, date and a short note, such as a transaction ID, so it can be matched to your account. No outside payment company is involved, and no card or bank details are ever collected.</li>
-					{{end}}
-					<li>Each invoice is linked to your account so the payment can be added to your balance. The amount, time and transaction are kept as a payment record. Refunds are recorded the same way.</li>
-					<li>Bitcoin transactions are public. Anyone who knows a Bitcoin address can see its transactions on the blockchain. Monero transactions are private by design, so Monero is the better choice if payment privacy matters to you.</li>
+					<li>Not encrypted: your e-mail address, when you signed up and were last active, the number, size and upload times of your files, and the names you give your app passwords and the day each was last used.</li>
 				</ul>
 			</section>
 
 			<section>
 				<h3>E-mail</h3>
 				<ul>
-					<li>Your e-mail is used only for your account and important service messages, such as password resets, balance reminders and notices about changes to the terms or your storage.</li>
+					<li>Your e-mail is used only for your account and important service messages, such as password resets, e-mail confirmations and notices about changes to the terms or your storage.</li>
 					<li>It's never used for marketing or advertising. E-mails are plain text, with no tracking pixels or tracked links.</li>
 					<li>E-mails are sent through {{tr "privacy_mail_provider"}}, which handles your address and the message only to deliver it.</li>
 					<li>If you add your OpenPGP public key in your settings, every e-mail to you is encrypted to it, so the e-mail provider only sees that a message was sent to you, not what it says. The subject line only reads "Encrypted message".</li>
@@ -74,7 +61,7 @@
 				<ul>
 					<li>The only cookie is the one that keeps you signed in and lets your library unlock while you use the site.</li>
 					<li>There are no analytics, tracking or advertising cookies.</li>
-					<li>The payment page is self-hosted too, so no outside company sets cookies there.</li>
+
 				</ul>
 			</section>
 
@@ -100,17 +87,17 @@
 				<h3>Retention and deletion</h3>
 				<ul>
 					<li>When you delete your account, your library and personal information are deleted right away. Copies in backups and in the second copy are erased within {{erasedays}} days. That copy is locked against deletion for a few days, so that neither an attacker nor a mistake can wipe every copy at once. Once the lock runs out, the deleted data is erased for good.</li>
-					<li>If your balance runs out, your library is kept for {{$p.LockDays}} days, with e-mail reminders, as described in the <a href="/terms">Terms of Service</a>. After that it's deleted.</li>
+
 					<li>Some records are deleted automatically:
 						<ul>
 							<li>login sessions after 7 days</li>
 							<li>password reset links after 1 hour</li>
 							<li>unfinished uploads after 24 hours</li>
-							<li>daily storage charges after 90 days</li>
+
 							<li>cached copies of deleted files immediately</li>
 						</ul>
 					</li>
-					<li>Payment and refund records are kept only as long as needed for accounting and legal requirements.</li>
+
 				</ul>
 			</section>
 

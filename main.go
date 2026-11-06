@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+
 	"time"
 
 	"github.com/guregu/intertube/email"
@@ -42,22 +42,6 @@ func main() {
 	web.DebugMode = *debugFlag
 	web.AssetsDir = *assetsFlag
 
-	prices, err := cfg.pricing()
-	if err != nil {
-		log.Fatalln("Invalid billing config:", err)
-	}
-	tube.Prices = prices
-	web.ManualPayment = strings.TrimSpace(cfg.Billing.ManualPayment)
-
-	err = web.SetBTCPay(web.BTCPayConfig{
-		URL:           cfg.BTCPay.URL,
-		StoreID:       cfg.BTCPay.StoreID,
-		APIKey:        cfg.BTCPay.APIKey,
-		WebhookSecret: cfg.BTCPay.WebhookSecret,
-	})
-	if err != nil {
-		log.Fatalln("Invalid btcpay config:", err)
-	}
 	if err := web.SetMail(email.Config{
 		Host:     cfg.Mail.Host,
 		Port:     cfg.Mail.Port,
@@ -133,7 +117,7 @@ func main() {
 
 	log.Println("Build date:", web.Deployed)
 	web.Load()
-	web.StartBilling(ctx)
+	web.StartRetention(ctx)
 	web.StartReplication(ctx)
 
 	if web.DebugMode {
