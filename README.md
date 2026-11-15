@@ -12,7 +12,7 @@
   <a href="https://github.com/chocolatemoo53/simplemusicserver/releases"><img src="https://img.shields.io/github/v/release/chocolatemoo53/simplemusicserver?label=tubesync" alt="Latest tubesync release"></a>
 </p>
 
-Simple Music Server is a place to keep the music you own. You upload your files, and you can play them in the browser or in any Subsonic app. Your library is encrypted before it is stored.
+Simple Music Server is a free app for keeping the music you own. You upload your files, and you can play them in the browser or in any Subsonic app. Your library is encrypted before it is stored. It's based on [inter.tube](https://inter.tube) by guregu.
 
 ## How your library is protected
 
@@ -53,7 +53,6 @@ The storage bucket, the database and its backups only hold encrypted data. Store
 - Download everything as one ZIP, with playlists and a list of your tracks.
 - Copy your library to a computer with [tubesync](cmd/tubesync).
 - Get e-mails encrypted to your OpenPGP key, if you add one.
-- Pay for storage from a prepaid balance, in Monero through BTCPay or by arrangement with the operator.
 
 ### App passwords
 
@@ -82,10 +81,8 @@ Steps:
 Optional sections in `config.toml`:
 
 - `[site]` sets the service name, your contact details and the providers named on the terms and privacy pages. Anything left empty shows a placeholder.
-- `[mail]` sends password resets and sign-up confirmations. With mail set up, the free storage only unlocks after a user confirms their e-mail.
+- `[mail]` sends password resets and sign-up confirmations. With mail set up, users confirm their e-mail before uploading.
 - `[replica]` keeps a second, locked copy of every file with another provider. Each copy is locked for `lock_days`, so it can't be deleted early, even with stolen keys.
-- `[billing]` sets the free storage and the price per GB.
-- `[btcpay]` takes payments. Use `manual_payment` instead to add credit by hand from the admin page.
 
 ## Development
 
