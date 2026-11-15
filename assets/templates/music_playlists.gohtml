@@ -32,6 +32,9 @@
 									{{render "_icon" "play"}} {{tr "btn_play"}}
 								</button>
 								{{end}}
+								{{if gt (len $pl.Tracks) 0}}
+								<button type="button" class="btn album-jam playlist-jam" data-ids="{{range $i, $t := $pl.Tracks}}{{if $i}},{{end}}{{$t.ID}}{{end}}" data-added='{{tr "jam_added"}}' data-gone='{{tr "jam_gone"}}' onclick="return addToJam(this),false;">{{tr "jam_addalbum"}}</button>
+								{{end}}
 								<a href="/playlist/{{$pl.Playlist.ID}}" class="btn">{{render "_icon" "edit"}} {{tr "btn_edit"}}</a>
 								<button type="button" class="btn btn-danger" onclick="return deletePlaylist({{$pl.Playlist.ID}}, '{{$pl.Playlist.Name}}'),false;">
 									{{render "_icon" "delete"}} {{tr "btn_delete"}}

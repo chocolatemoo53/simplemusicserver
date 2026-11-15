@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	mrand "math/rand/v2"
 	"net/http"
 	"slices"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 const (
 	jamMaxListeners = 20
 	jamMaxItems     = 200
+	jamHistory      = 50
 	jamLifetime     = 12 * time.Hour
 	jamHostTimeout  = 10 * time.Minute
 	jamListenerTTL  = 30 * time.Second
@@ -221,6 +223,19 @@ func (j *jam) schedule() {
 			j.seek(j.index+1, 0, true)
 		}
 	})
+}
+
+func (j *jam) trimHistory() {
+	drop := j.index - jamHistory
+	if drop <= 0 {
+		return
+	}
+	for _, it := range j.items[:drop] {
+		clear(it.fileKey)
+		clear(it.picKey)
+	}
+	j.items = slices.Delete(j.items, 0, drop)
+	j.index -= drop
 }
 
 func (j *jam) itemIndex(key int) int {
@@ -542,17 +557,29 @@ func jamAdd(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Sign in to add music", http.StatusUnauthorized)
 		return
 	}
-	ids := strings.Split(r.FormValue("ids"), ",")
-	if len(ids) > jamMaxItems {
-		ids = ids[:jamMaxItems]
+	shuffle := r.FormValue("shuffle") == "on"
+	var tracks tube.Tracks
+	var err error
+	if shuffle {
+		tracks, err = u.GetTracks(ctx)
+		if err != nil {
+			panic(err)
+		}
+		mrand.Shuffle(len(tracks), func(a, b int) { tracks[a], tracks[b] = tracks[b], tracks[a] })
+		tracks = tracks[:min(len(tracks), jamMaxItems)]
+	} else {
+		ids := strings.Split(r.FormValue("ids"), ",")
+		if len(ids) > jamMaxItems {
+			ids = ids[:jamMaxItems]
+		}
+		tracks, err = u.GetTracksBatch(ctx, ids)
+		if err != nil {
+			panic(err)
+		}
+		slices.SortFunc(tracks, func(a, b tube.Track) int {
+			return slices.Index(ids, a.ID) - slices.Index(ids, b.ID)
+		})
 	}
-	tracks, err := u.GetTracksBatch(ctx, ids)
-	if err != nil {
-		panic(err)
-	}
-	slices.SortFunc(tracks, func(a, b tube.Track) int {
-		return slices.Index(ids, a.ID) - slices.Index(ids, b.ID)
-	})
 	by := jamName(r.FormValue("name"))
 	var items []*jamItem
 	for _, t := range tracks {
@@ -586,7 +613,12 @@ func jamAdd(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if len(j.items)+len(items) > jamMaxItems {
+	j.trimHistory()
+	room := jamMaxItems - (len(j.items) - j.index)
+	if shuffle && len(items) > room {
+		items = items[:max(room, 0)]
+	}
+	if len(items) > room || (shuffle && room <= 0) {
 		http.Error(w, "The queue is full", http.StatusConflict)
 		return
 	}

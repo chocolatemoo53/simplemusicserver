@@ -135,7 +135,10 @@
 							<option value="host">{{tr "jam_from_host"}}</option>
 						</select>
 					</p>
-					<input type="search" id="jam-search" placeholder='{{tr "jam_search"}}' autocomplete="off">
+					<div class="jam-buttons">
+						<input type="search" id="jam-search" placeholder='{{tr "jam_search"}}' autocomplete="off">
+						<button type="button" onclick="post('add', {shuffle: 'on', name: nameInput.value, from: source()})">{{render "_icon" "shuffle"}} {{tr "jam_shuffle"}}</button>
+					</div>
 					<ul id="jam-results" class="jam-list"></ul>
 				</section>
 
