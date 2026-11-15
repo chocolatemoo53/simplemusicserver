@@ -288,11 +288,11 @@ func shouldSkip(path, hash string) (bool, error) {
 	return false, nil
 }
 
-func sha1Sum(r io.ReadSeeker) (string, error) {
+func sha1Sum(r io.Reader) (string, error) {
 	h := sha1.New()
 	_, err := io.Copy(h, r)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }

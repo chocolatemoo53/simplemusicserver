@@ -10,6 +10,7 @@
 			{{end}}
 			<div class="album-info">
 				<h2><a class="album-artist" tabindex=0 onclick="arguments[0].stopPropagation();return setFilter('artist:{{$first.AnyArtist}}'),false;">{{$first.Info.Artist}}</a> - {{$first.Info.Album}}</h2>
+				<a class="album-edit" href="/track/{{range $i, $t := $album}}{{if $i}},{{end}}{{$t.ID}}{{end}}/edit" target="_blank">{{tr "edit_album"}}</a>
 				<ol class="meat-merge">
 				{{range $album}}
 					<li {{with .Number}} value="{{.}}" {{end}}

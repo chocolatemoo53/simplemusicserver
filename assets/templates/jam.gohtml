@@ -1,0 +1,424 @@
+<!doctype html>
+<html>
+	<head>
+		{{render "_head" $}}
+		<title>{{tr "titleprefix"}}{{tr "jam_title"}}</title>
+		<style>
+			.jam {
+				display: grid;
+				gap: 24px;
+				max-width: 760px;
+			}
+			.jam-now {
+				display: flex;
+				gap: 20px;
+				align-items: center;
+			}
+			.jam-cover {
+				flex: none;
+				width: 160px;
+				max-width: 36vw;
+				aspect-ratio: 1 / 1;
+				border-radius: var(--radius, 10px);
+				background: var(--surface);
+				object-fit: cover;
+			}
+			.jam-now-info {
+				flex: 1;
+				min-width: 0;
+				display: grid;
+				gap: 8px;
+			}
+			.jam-now-info b {
+				font-size: 20px;
+			}
+			.jam-sub, .jam-muted {
+				color: var(--muted);
+			}
+			.jam-bar {
+				height: 6px;
+				border-radius: 3px;
+				background: var(--surface);
+				overflow: hidden;
+			}
+			.jam-bar span {
+				display: block;
+				height: 100%;
+				width: 0;
+				background: var(--accent);
+			}
+			.jam-buttons, .jam-host {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				align-items: center;
+			}
+			.jam-list {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+			.jam-list li {
+				display: flex;
+				gap: 8px;
+				align-items: center;
+				padding: 8px 10px;
+				border-radius: var(--r-s);
+			}
+			.jam-list li[data-current] {
+				background: var(--hi-bg);
+			}
+			.jam-list li[data-played] {
+				opacity: 0.55;
+			}
+			.jam-list .jam-track {
+				flex: 1;
+				min-width: 0;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.jam-list button {
+				padding: 4px 10px;
+			}
+			.jam input[type="text"], .jam input[type="search"] {
+				width: 100%;
+				max-width: 360px;
+			}
+			[hidden] {
+				display: none !important;
+			}
+		</style>
+	</head>
+	<body>
+		{{render "_nav" $}}
+		<main>
+			<h2>{{tr "jam_title"}}</h2>
+			{{if $.Gone}}
+				<p>{{tr "jam_gone"}}</p>
+			{{else if not $.ID}}
+				<p>{{tr "jam_intro"}}</p>
+				<form action="/jam" method="POST">
+					<input type="submit" value='{{tr "jam_start"}}'>
+				</form>
+			{{else}}
+			<div class="jam" id="jam">
+				<p id="jam-status" class="jam-muted" hidden></p>
+				<button type="button" id="jam-listen" class="btn-primary">{{tr "jam_listen"}}</button>
+
+				<section class="jam-now">
+					<img id="jam-cover" class="jam-cover" alt="" hidden>
+					<div id="jam-cover-empty" class="jam-cover"></div>
+					<div class="jam-now-info">
+						<b id="jam-title">{{tr "jam_empty"}}</b>
+						<span id="jam-sub" class="jam-sub"></span>
+						<div class="jam-bar"><span id="jam-progress"></span></div>
+						<div class="jam-buttons" id="jam-controls" hidden>
+							<button type="button" onclick="jamControl('prev')" aria-label='{{tr "jam_prev"}}'>{{render "_icon" "prev"}}</button>
+							<button type="button" id="jam-toggle" onclick="jamToggle()" aria-label='{{tr "jam_playpause"}}'>{{render "_icon" "play"}}</button>
+							<button type="button" onclick="jamControl('next')" aria-label='{{tr "jam_next"}}'>{{render "_icon" "next"}}</button>
+						</div>
+					</div>
+				</section>
+
+				<section>
+					<h3>{{tr "jam_queue"}}</h3>
+					<ol id="jam-queue" class="jam-list"></ol>
+				</section>
+
+				<section id="jam-add" hidden>
+					<h3>{{tr "jam_add"}}</h3>
+					<input type="search" id="jam-search" placeholder='{{tr "jam_search"}}' autocomplete="off">
+					<ul id="jam-results" class="jam-list"></ul>
+				</section>
+
+				<section>
+					<h3>{{tr "jam_listeners"}}</h3>
+					<p id="jam-listeners" class="jam-muted"></p>
+					<label for="jam-name">{{tr "jam_name"}}</label>
+					<input type="text" id="jam-name" maxlength="32" autocomplete="nickname">
+				</section>
+
+				<section id="jam-host" hidden>
+					<h3>{{tr "jam_host"}}</h3>
+					<p class="jam-muted">{{tr "jam_share"}}</p>
+					<div class="jam-host">
+						<button type="button" onclick="jamCopy()">{{tr "jam_copy"}}</button>
+						<label><input type="checkbox" id="jam-guests" onchange="jamSetting('guests', {control: this.checked ? 'on' : ''})"> {{tr "jam_guestcontrol"}}</label>
+						<button type="button" onclick="jamRelink()">{{tr "jam_relink"}}</button>
+						<button type="button" class="btn-danger" onclick="jamEnd()">{{tr "jam_end"}}</button>
+					</div>
+				</section>
+			</div>
+			<script>
+			var JAM = {{$.ID}};
+			var LISTENER = Math.random().toString(36).slice(2) + Date.now().toString(36);
+			var TEXT = {
+				empty: {{tr "jam_empty"}},
+				ended: {{tr "jam_gone"}},
+				full: {{tr "jam_full"}},
+				offline: {{tr "jam_offline"}},
+				addedBy: {{tr "jam_addedby"}},
+				add: {{tr "jam_addbtn"}},
+				remove: {{tr "jam_remove"}},
+				noListeners: {{tr "jam_nolisteners"}},
+				copied: {{tr "jam_copied"}},
+				confirmEnd: {{tr "jam_confirmend"}}
+			};
+			var state = null;
+			var offset = 0;
+			var bestRTT = Infinity;
+			var listening = false;
+			var loadedKey = null;
+			var audio = new Audio();
+			audio.preload = "auto";
+
+			var nameInput = document.getElementById("jam-name");
+			try { nameInput.value = localStorage.getItem("jam-name") || ""; } catch (e) {}
+			nameInput.addEventListener("change", function() {
+				try { localStorage.setItem("jam-name", nameInput.value); } catch (e) {}
+				if (state) { state.Version = -1; }
+			});
+
+			function base() { return "/jam/" + JAM; }
+			function serverNow() { return Date.now() + offset; }
+			function current() { return state && state.Items[state.Index]; }
+			function expectedPos() {
+				if (!state) { return 0; }
+				if (!state.Playing) { return state.Pos; }
+				return state.Pos + (serverNow() - state.Anchor) / 1000;
+			}
+
+			function setStatus(text) {
+				var el = document.getElementById("jam-status");
+				el.textContent = text || "";
+				el.hidden = !text;
+			}
+
+			function poll() {
+				var v = state ? state.Version : -1;
+				var url = base() + "/state?v=" + v + "&l=" + LISTENER + "&name=" + encodeURIComponent(nameInput.value);
+				var t0 = Date.now();
+				fetch(url, {cache: "no-store"}).then(function(res) {
+					var t1 = Date.now();
+					return res.json().then(function(data) {
+						if (data.Ended) {
+							finish(TEXT.ended);
+							return;
+						}
+						if (data.Full) {
+							finish(TEXT.full);
+							return;
+						}
+						var rtt = t1 - t0;
+						if (rtt < 1000 && rtt <= bestRTT * 1.5) {
+							bestRTT = Math.min(bestRTT, rtt);
+							offset = data.Now - (t0 + t1) / 2;
+						}
+						setStatus("");
+						state = data;
+						render();
+						apply();
+						poll();
+					});
+				}).catch(function() {
+					setStatus(TEXT.offline);
+					setTimeout(poll, 2000);
+				});
+			}
+
+			function finish(text) {
+				audio.pause();
+				audio.removeAttribute("src");
+				document.querySelectorAll("#jam > section, #jam-listen").forEach(function(el) { el.hidden = true; });
+				setStatus(text);
+			}
+
+			function apply() {
+				var cur = current();
+				if (!listening) { return; }
+				if (!cur) {
+					audio.pause();
+					return;
+				}
+				if (loadedKey !== cur.Key) {
+					loadedKey = cur.Key;
+					audio.src = base() + "/track/" + cur.Key;
+					audio.addEventListener("loadedmetadata", function() {
+						audio.currentTime = Math.max(0, expectedPos());
+						sync();
+					}, {once: true});
+					return;
+				}
+				sync();
+			}
+
+			function sync() {
+				var cur = current();
+				if (!listening || !cur || loadedKey !== cur.Key || audio.readyState < 1) { return; }
+				var want = Math.max(0, expectedPos());
+				if (Math.abs(audio.currentTime - want) > 0.4) {
+					audio.currentTime = want;
+				}
+				if (state.Playing && audio.paused) {
+					audio.play().catch(function() {});
+				} else if (!state.Playing && !audio.paused) {
+					audio.pause();
+				}
+			}
+
+			audio.addEventListener("ended", function() {
+				var cur = current();
+				if (cur) { post("ended", {key: cur.Key}); }
+			});
+
+			document.getElementById("jam-listen").addEventListener("click", function() {
+				listening = true;
+				this.hidden = true;
+				audio.play().catch(function() {});
+				apply();
+			});
+
+			function el(tag, text, cls) {
+				var e = document.createElement(tag);
+				if (text) { e.textContent = text; }
+				if (cls) { e.className = cls; }
+				return e;
+			}
+
+			function button(text, fn) {
+				var b = el("button", text);
+				b.type = "button";
+				b.addEventListener("click", function(ev) {
+					ev.stopPropagation();
+					fn();
+				});
+				return b;
+			}
+
+			function render() {
+				var cur = current();
+				document.getElementById("jam-title").textContent = cur ? cur.Title : TEXT.empty;
+				document.getElementById("jam-sub").textContent = cur ? [cur.Artist, cur.Album].filter(Boolean).join(" · ") : "";
+				var cover = document.getElementById("jam-cover");
+				var hasPic = cur && cur.Pic;
+				cover.hidden = !hasPic;
+				document.getElementById("jam-cover-empty").hidden = hasPic;
+				if (hasPic) {
+					var src = base() + "/pic/" + cur.Key;
+					if (cover.getAttribute("src") !== src) { cover.src = src; }
+				}
+				document.getElementById("jam-controls").hidden = !state.CanControl;
+				document.getElementById("jam-toggle").innerHTML = document.querySelector(state.Playing ? "#jam-icon-pause" : "#jam-icon-play").innerHTML;
+				document.getElementById("jam-add").hidden = !state.CanAdd;
+				document.getElementById("jam-host").hidden = !state.Host;
+				document.getElementById("jam-guests").checked = state.GuestControl;
+				document.getElementById("jam-listeners").textContent = state.Listeners.length ? state.Listeners.join(", ") : TEXT.noListeners;
+
+				var list = document.getElementById("jam-queue");
+				list.replaceChildren();
+				state.Items.forEach(function(it, i) {
+					var li = el("li");
+					if (i === state.Index) { li.dataset.current = ""; }
+					if (i < state.Index) { li.dataset.played = ""; }
+					var label = el("span", it.Title + (it.Artist ? " · " + it.Artist : ""), "jam-track");
+					label.title = TEXT.addedBy.replace("%s", it.AddedBy);
+					li.append(label, el("span", it.AddedBy, "jam-muted"));
+					if (state.CanControl) {
+						li.style.cursor = "pointer";
+						li.addEventListener("click", function() { jamControl("jump", {key: it.Key}); });
+						if (i > state.Index + 1) { li.append(button("↑", function() { jamControl("up", {key: it.Key}); })); }
+						if (i > state.Index && i < state.Items.length - 1) { li.append(button("↓", function() { jamControl("down", {key: it.Key}); })); }
+						li.append(button(TEXT.remove, function() { jamControl("remove", {key: it.Key}); }));
+					}
+					list.append(li);
+				});
+			}
+
+			setInterval(function() {
+				var cur = current();
+				var bar = document.getElementById("jam-progress");
+				if (!cur || !cur.Duration) {
+					bar.style.width = "0";
+					return;
+				}
+				bar.style.width = Math.min(100, expectedPos() / cur.Duration * 100) + "%";
+			}, 250);
+			setInterval(sync, 1000);
+
+			function post(path, data) {
+				return fetch(base() + "/" + path, {method: "POST", body: new URLSearchParams(data || {})}).then(function(res) {
+					if (!res.ok && res.status !== 404) {
+						res.text().then(function(t) { setStatus(t); });
+					}
+					return res;
+				});
+			}
+
+			function jamControl(action, data) {
+				data = data || {};
+				data.action = action;
+				if (action === "seek") { data.pos = expectedPos(); }
+				post("control", data);
+			}
+
+			function jamToggle() {
+				jamControl(state && state.Playing ? "pause" : "play");
+			}
+
+			function jamSetting(action, data) {
+				data = data || {};
+				data.action = action;
+				return post("settings", data);
+			}
+
+			function jamCopy() {
+				navigator.clipboard.writeText(location.href).then(function() { setStatus(TEXT.copied); });
+			}
+
+			function jamRelink() {
+				jamSetting("relink").then(function(res) { return res.json(); }).then(function(data) {
+					JAM = data.ID;
+					history.replaceState(null, "", base());
+					state = null;
+				});
+			}
+
+			function jamEnd() {
+				if (confirm(TEXT.confirmEnd)) { jamSetting("end"); }
+			}
+
+			var searchTimer = null;
+			document.getElementById("jam-search").addEventListener("input", function() {
+				var q = this.value;
+				clearTimeout(searchTimer);
+				searchTimer = setTimeout(function() { search(q); }, 250);
+			});
+
+			function search(q) {
+				var results = document.getElementById("jam-results");
+				if (!q.trim()) {
+					results.replaceChildren();
+					return;
+				}
+				fetch(base() + "/search?q=" + encodeURIComponent(q)).then(function(res) { return res.json(); }).then(function(tracks) {
+					results.replaceChildren();
+					tracks.forEach(function(t) {
+						var li = el("li");
+						li.append(el("span", t.Title + (t.Artist ? " · " + t.Artist : ""), "jam-track"));
+						li.append(button(TEXT.add, function() {
+							post("add", {ids: t.ID, name: nameInput.value});
+						}));
+						results.append(li);
+					});
+				});
+			}
+
+			poll();
+			</script>
+			<template id="jam-icon-play">{{render "_icon" "play"}}</template>
+			<template id="jam-icon-pause">{{render "_icon" "pause"}}</template>
+			{{end}}
+		</main>
+	</body>
+</html>

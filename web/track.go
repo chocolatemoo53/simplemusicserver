@@ -298,9 +298,6 @@ func getMultiTracks(ctx context.Context, u tube.User, ids []string) (t tube.Trac
 				t.Composer = ""
 				t.Info.Composer = ""
 			}
-			if tx.Picture != t.Picture {
-				t.Picture = tube.Picture{}
-			}
 			if tx.Year != t.Year {
 				t.Year = 0
 			}
@@ -315,8 +312,23 @@ func getMultiTracks(ctx context.Context, u tube.User, ids []string) (t tube.Trac
 				t.Info.Comment = ""
 			}
 		}
+		t.Picture = sharedPicture(tracks)
 	}
 	return
+}
+
+func sharedPicture(tracks tube.Tracks) tube.Picture {
+	var pic tube.Picture
+	for _, t := range tracks {
+		if t.Picture.ID == "" {
+			continue
+		}
+		if pic.ID != "" && t.Picture != pic {
+			return tube.Picture{}
+		}
+		pic = t.Picture
+	}
+	return pic
 }
 
 func msec2time(msecs int64) time.Time {

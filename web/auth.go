@@ -42,7 +42,7 @@ func allowGuestPrefix(prefix string) func(ctx context.Context, w http.ResponseWr
 }
 
 func appPasswordReadable(path string) bool {
-	return path == "/api/v0/tracks" || strings.HasPrefix(path, "/dl/tracks/")
+	return strings.TrimSuffix(path, "/") == "/api/v0/tracks" || strings.HasPrefix(path, "/dl/tracks/")
 }
 
 func requireLogin(ctx context.Context, w http.ResponseWriter, r *http.Request) context.Context {

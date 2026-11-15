@@ -23,6 +23,7 @@ func init() {
 		"/favicon.svg", "/apple-touch-icon.png",
 		"/api/v0/login"))
 	use("/", allowGuestPrefix("/fonts/"))
+	use("/", allowGuestPrefix("/jam/"))
 	use("/", requireLogin)
 
 	handle("GET /{$}", homepage)

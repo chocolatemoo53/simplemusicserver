@@ -103,16 +103,16 @@
                     <tr>
                         <td>{{tr "subsonic_authsetting"}}</td>
                         <td>
-                            Plain-text password mode or API key login for strict app passwords; the default token method works with compatibility ones
+                            Plaintext password or API key for strict mode; token auth requires compatibility mode.
                         </td>
                     </tr>
                 </table>
 
                 <h3 id="auth">{{tr "subsonic_auth"}}</h3>
                 <ul>
-                    <li>Music apps log in with an app password, never your account password. Create one per device in <a href="/settings#apps">settings</a> and revoke it there if the device is lost.</li>
-                    <li>App passwords only work for music apps. They cannot sign in to this site or change account settings.</li>
-                    <li>App passwords are <b>strict</b> by default: your library can only be unlocked while that device is connected. Enable plain-text password or API key mode in your app settings. If your app lacks support, use a <b>compatibility</b> app password instead.</li>
+                    <li>Music apps log in with an app password. Create one per device in <a href="/settings#apps">settings</a>.</li>
+                    <li>App passwords only work for music apps and cannot access account settings.</li>
+                    <li><b>Strict</b> app passwords require plaintext password or API key mode in your app. If your app only supports token auth, use a <b>compatibility</b> app password.</li>
                     <li>Always connect over HTTPS. Some apps transmit credentials in the URL query string.</li>
                 </ul>
 

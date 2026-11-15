@@ -9,6 +9,7 @@
 		<li><a href="/music/playlists" {{if (or (eq path "/music/playlists") (hasprefix path "/playlist"))}}aria-current="page"{{end}}>{{render "_icon" "playlist"}}{{tr "nav_playlists"}}</a></li>
 		<li class="mobile-only"><a href="/upload" {{if (eq path "/upload")}}aria-current="page"{{end}}>{{tr "nav_upload"}}</a></li>
 		<li class="shell-gap"><a href="/sync" {{if (eq path "/sync")}}aria-current="page"{{end}}>{{render "_icon" "sync"}}{{tr "nav_sync"}}</a></li>
+		<li><a href="/jam" {{if (hasprefix path "/jam")}}aria-current="page"{{end}}>{{render "_icon" "jam"}}{{tr "nav_jam"}}</a></li>
 		<li><a href="/subsonic" {{if (eq path "/subsonic")}}aria-current="page"{{end}}>{{render "_icon" "phone"}}{{tr "nav_subsonic_apps"}}</a></li>
 		<li><a href="/settings" {{if (eq path "/settings")}}aria-current="page"{{end}}>{{render "_icon" "settings"}}{{tr "nav_settings"}}</a></li>
 		{{if isadmin}}

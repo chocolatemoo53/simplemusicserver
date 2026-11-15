@@ -89,10 +89,6 @@ func NewExprEnv(t tube.Track) ExprEnv {
 	}
 }
 
-// Taken from https://github.com/antonmedv/expr/blob/master/docs/examples/dates_test.go
-// MIT license
-// https://github.com/antonmedv/expr/blob/master/LICENSE
-
 type datetime struct{}
 
 func (datetime) Date(s string) time.Time {
