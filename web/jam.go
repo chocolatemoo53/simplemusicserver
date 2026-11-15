@@ -93,6 +93,34 @@ func init() {
 	handle("POST /jam/{id}/control", jamControl)
 	handle("POST /jam/{id}/ended", jamEnded)
 	handle("POST /jam/{id}/settings", jamSettings)
+	handle("POST /jam/{id}/leave", jamLeave)
+}
+
+func jamListenerID(ctx context.Context, r *http.Request) string {
+	if u, ok := userFrom(ctx); ok {
+		return "user:" + strconv.Itoa(u.ID)
+	}
+	if l := r.FormValue("l"); l != "" && len(l) <= 64 {
+		return "guest:" + l
+	}
+	return ""
+}
+
+func jamLeave(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	j := findJam(r.PathValue("id"))
+	if j == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	j.mu.Lock()
+	if id := jamListenerID(ctx, r); id != "" {
+		if _, ok := j.listeners[id]; ok {
+			delete(j.listeners, id)
+			j.notify(false)
+		}
+	}
+	j.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func newJamID() string {
@@ -328,7 +356,7 @@ func jamStateHandler(ctx context.Context, w http.ResponseWriter, r *http.Request
 		return
 	}
 	u, signedIn := userFrom(ctx)
-	listener := r.FormValue("l")
+	listener := jamListenerID(ctx, r)
 	since, _ := strconv.Atoi(r.FormValue("v"))
 
 	j.mu.Lock()
@@ -336,7 +364,7 @@ func jamStateHandler(ctx context.Context, w http.ResponseWriter, r *http.Request
 	if signedIn && u.ID == j.host {
 		j.hostSeen = now
 	}
-	if listener != "" && len(listener) <= 64 {
+	if listener != "" {
 		l, known := j.listeners[listener]
 		if !known {
 			active := 0
@@ -501,6 +529,9 @@ func jamAdd(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
+	slices.SortFunc(tracks, func(a, b tube.Track) int {
+		return slices.Index(ids, a.ID) - slices.Index(ids, b.ID)
+	})
 	by := jamName(r.FormValue("name"))
 	var items []*jamItem
 	for _, t := range tracks {

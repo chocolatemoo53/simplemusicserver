@@ -144,15 +144,22 @@
 					<p class="jam-muted">{{tr "jam_share"}}</p>
 					<div class="jam-host">
 						<button type="button" onclick="jamCopy()">{{tr "jam_copy"}}</button>
-						<label><input type="checkbox" id="jam-guests" onchange="jamSetting('guests', {control: this.checked ? 'on' : ''})"> {{tr "jam_guestcontrol"}}</label>
 						<button type="button" onclick="jamRelink()">{{tr "jam_relink"}}</button>
 						<button type="button" class="btn-danger" onclick="jamEnd()">{{tr "jam_end"}}</button>
 					</div>
+					<p><label><input type="checkbox" id="jam-guests" onchange="jamSetting('guests', {control: this.checked ? 'on' : ''})"> {{tr "jam_guestcontrol"}}</label></p>
 				</section>
 			</div>
 			<script>
 			var JAM = {{$.ID}};
 			var LISTENER = Math.random().toString(36).slice(2) + Date.now().toString(36);
+			try {
+				LISTENER = localStorage.getItem("jam-listener") || LISTENER;
+				localStorage.setItem("jam-listener", LISTENER);
+			} catch (e) {}
+			addEventListener("pagehide", function() {
+				navigator.sendBeacon(base() + "/leave", new URLSearchParams({l: LISTENER}));
+			});
 			var TEXT = {
 				empty: {{tr "jam_empty"}},
 				ended: {{tr "jam_gone"}},
@@ -174,7 +181,12 @@
 			var seekStarted = 0;
 			var lastSeek = 0;
 			var audio = new Audio();
-			audio.preload = "auto";
+			var preload = new Audio();
+			var preloadKey = null;
+			var finishedKey = null;
+			var handoverTimer = null;
+			var GAPLESS_LEAD = 0.03;
+			audio.preload = preload.preload = "auto";
 
 			var nameInput = document.getElementById("jam-name");
 			try { nameInput.value = localStorage.getItem("jam-name") || ""; } catch (e) {}
@@ -184,8 +196,10 @@
 			});
 
 			function base() { return "/jam/" + JAM; }
+			try { localStorage.setItem("jam-id", JAM); } catch (e) {}
 			function serverNow() { return Date.now() + offset; }
 			function current() { return state && state.Items[state.Index]; }
+			function nextItem() { return state && state.Items[state.Index + 1]; }
 			function expectedPos() {
 				if (!state) { return 0; }
 				if (!state.Playing) { return state.Pos; }
@@ -231,6 +245,9 @@
 			}
 
 			function finish(text) {
+				try {
+					if (localStorage.getItem("jam-id") === JAM) { localStorage.removeItem("jam-id"); }
+				} catch (e) {}
 				audio.pause();
 				audio.removeAttribute("src");
 				document.querySelectorAll("#jam > section, #jam-listen").forEach(function(el) { el.hidden = true; });
@@ -244,7 +261,13 @@
 					audio.pause();
 					return;
 				}
+				if (finishedKey !== null) {
+					if (cur.Key === finishedKey) { return; }
+					finishedKey = null;
+				}
+				preloadNext();
 				if (loadedKey !== cur.Key) {
+					clearHandover();
 					loadedKey = cur.Key;
 					audio.src = base() + "/track/" + cur.Key;
 					audio.addEventListener("loadedmetadata", function() {
@@ -277,6 +300,53 @@
 				} else if (!state.Playing && !audio.paused) {
 					audio.pause();
 				}
+				scheduleHandover();
+			}
+
+			function preloadNext() {
+				var n = nextItem();
+				if (n && preloadKey !== n.Key) {
+					preloadKey = n.Key;
+					preload.src = base() + "/track/" + n.Key;
+				}
+			}
+
+			function clearHandover() {
+				clearTimeout(handoverTimer);
+				handoverTimer = null;
+			}
+
+			function scheduleHandover() {
+				var n = nextItem();
+				if (handoverTimer || !state.Playing || audio.paused || !n || preloadKey !== n.Key || preload.readyState < 3) { return; }
+				var left = (audio.duration - audio.currentTime) / (audio.playbackRate || 1);
+				if (!(left < 1.5)) { return; }
+				handoverTimer = setTimeout(handover, Math.max(0, (left - GAPLESS_LEAD) * 1000));
+			}
+
+			function handover() {
+				clearHandover();
+				var cur = current();
+				var n = nextItem();
+				if (!cur || !n || preloadKey !== n.Key || loadedKey !== cur.Key) { return false; }
+				var old = audio;
+				audio = preload;
+				preload = old;
+				audio.playbackRate = 1;
+				audio.currentTime = 0;
+				loadedKey = n.Key;
+				preloadKey = null;
+				finishedKey = cur.Key;
+				audio.play().catch(function() {
+					audio = old;
+					preload = new Audio();
+					preload.preload = "auto";
+					bindAudio(preload);
+					audio.src = base() + "/track/" + n.Key;
+					audio.play().catch(function() {});
+				});
+				post("ended", {key: cur.Key});
+				return true;
 			}
 
 			function jump() {
@@ -285,22 +355,38 @@
 				audio.currentTime = Math.max(0, expectedPos() + (state && state.Playing ? seekLag : 0));
 			}
 
-			audio.addEventListener("canplay", function() {
-				if (seekStarted) {
-					seekLag = Math.max(0.1, Math.min(3, (Date.now() - seekStarted) / 1000));
-					seekStarted = 0;
-				}
-			});
-
-			audio.addEventListener("ended", function() {
-				var cur = current();
-				if (cur) { post("ended", {key: cur.Key}); }
-			});
+			function bindAudio(a) {
+				a.addEventListener("canplay", function() {
+					if (a === audio && seekStarted) {
+						seekLag = Math.max(0.1, Math.min(3, (Date.now() - seekStarted) / 1000));
+						seekStarted = 0;
+					}
+				});
+				a.addEventListener("ended", function() {
+					if (a !== audio || handover()) { return; }
+					var cur = current();
+					if (cur) { post("ended", {key: cur.Key}); }
+				});
+			}
+			bindAudio(audio);
+			bindAudio(preload);
 
 			document.getElementById("jam-listen").addEventListener("click", function() {
 				listening = true;
 				this.hidden = true;
 				audio.play().catch(function() {});
+				preloadNext();
+				if (preload.src) {
+					var p = preload;
+					p.muted = true;
+					p.play().then(function() {
+						if (p !== audio) {
+							p.pause();
+							p.currentTime = 0;
+						}
+						p.muted = false;
+					}).catch(function() { p.muted = false; });
+				}
 				apply();
 			});
 
@@ -404,6 +490,7 @@
 			function jamRelink() {
 				jamSetting("relink").then(function(res) { return res.json(); }).then(function(data) {
 					JAM = data.ID;
+					try { localStorage.setItem("jam-id", JAM); } catch (e) {}
 					history.replaceState(null, "", base());
 					state = null;
 				});

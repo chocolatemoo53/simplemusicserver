@@ -11,6 +11,8 @@
 			<div class="album-info">
 				<h2><a class="album-artist" tabindex=0 onclick="arguments[0].stopPropagation();return setFilter('artist:{{$first.AnyArtist}}'),false;">{{$first.Info.Artist}}</a> - {{$first.Info.Album}}</h2>
 				<a class="album-edit" href="/track/{{range $i, $t := $album}}{{if $i}},{{end}}{{$t.ID}}{{end}}/edit" target="_blank">{{tr "edit_album"}}</a>
+				<a class="album-edit album-jam" href="#" data-ids="{{range $i, $t := $album}}{{if $i}},{{end}}{{$t.ID}}{{end}}" data-added='{{tr "jam_added"}}' data-gone='{{tr "jam_gone"}}' onclick="return addToJam(this),false;">{{tr "jam_addalbum"}}</a>
+				<a class="album-edit album-delete" href="#" data-confirm='{{tr "delete_album_confirm" $first.Info.Album (len $album)}}' onclick="return deleteTrack(Array.from(this.closest('.album').querySelectorAll('.track')), this.dataset.confirm),false;">{{tr "delete_album"}}</a>
 				<ol class="meat-merge">
 				{{range $album}}
 					<li {{with .Number}} value="{{.}}" {{end}}
