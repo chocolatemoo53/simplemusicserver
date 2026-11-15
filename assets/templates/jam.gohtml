@@ -187,6 +187,7 @@
 			var state = null;
 			var offset = 0;
 			var bestRTT = Infinity;
+			var driftAvg = 0;
 			var listening = false;
 			var loadedKey = null;
 			var seekLag = 0.3;
@@ -240,7 +241,7 @@
 							return;
 						}
 						var rtt = t1 - t0;
-						if (rtt < 1000 && rtt <= bestRTT * 1.5) {
+						if (rtt < 1000 && rtt < bestRTT) {
 							bestRTT = Math.min(bestRTT, rtt);
 							offset = data.Now - (t0 + t1) / 2;
 						}
@@ -295,16 +296,17 @@
 				var cur = current();
 				if (!listening || !cur || loadedKey !== cur.Key || audio.readyState < 1) { return; }
 				if (!state.Playing) {
-					audio.playbackRate = 1;
+					setRate(1);
 					if (Math.abs(audio.currentTime - expectedPos()) > 0.4) { jump(); }
 				} else if (!audio.seeking && audio.readyState >= 3) {
 					var drift = audio.currentTime - expectedPos();
+					driftAvg = driftAvg * 0.7 + drift * 0.3;
 					if (Math.abs(drift) > 2 && Date.now() - lastSeek > 4000) {
 						jump();
-					} else if (Math.abs(drift) > 0.05) {
-						audio.playbackRate = 1 - Math.max(-0.08, Math.min(0.08, drift * 0.5));
-					} else {
-						audio.playbackRate = 1;
+					} else if (Math.abs(driftAvg) > 0.2) {
+						setRate(driftAvg < 0 ? 1.03 : 0.97);
+					} else if (Math.abs(driftAvg) < 0.05) {
+						setRate(1);
 					}
 				}
 				if (state.Playing && audio.paused) {
@@ -313,6 +315,10 @@
 					audio.pause();
 				}
 				scheduleHandover();
+			}
+
+			function setRate(rate) {
+				if (audio.playbackRate !== rate) { audio.playbackRate = rate; }
 			}
 
 			function preloadNext() {
@@ -346,6 +352,7 @@
 				preload = old;
 				audio.playbackRate = 1;
 				audio.currentTime = 0;
+				driftAvg = 0;
 				loadedKey = n.Key;
 				preloadKey = null;
 				finishedKey = cur.Key;
@@ -363,6 +370,7 @@
 
 			function jump() {
 				lastSeek = seekStarted = Date.now();
+				driftAvg = 0;
 				audio.playbackRate = 1;
 				audio.currentTime = Math.max(0, expectedPos() + (state && state.Playing ? seekLag : 0));
 			}
