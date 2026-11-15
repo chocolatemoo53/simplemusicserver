@@ -275,7 +275,10 @@
 					return;
 				}
 				if (finishedKey !== null) {
-					if (cur.Key === finishedKey) { return; }
+					if (cur.Key === finishedKey) {
+						if (!state.Playing) { audio.pause(); }
+						return;
+					}
 					finishedKey = null;
 				}
 				preloadNext();
@@ -391,23 +394,33 @@
 			bindAudio(audio);
 			bindAudio(preload);
 
-			document.getElementById("jam-listen").addEventListener("click", function() {
+			var SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
+			function unlock(el) {
+				if (!el.getAttribute("src")) { el.src = SILENCE; }
+				el.muted = true;
+				el.play().then(function() {
+					if (el !== audio || !state || !state.Playing) { el.pause(); }
+					el.muted = false;
+					sync();
+				}).catch(function() { el.muted = false; });
+			}
+
+			function startListening() {
+				if (listening) { return; }
 				listening = true;
-				this.hidden = true;
-				audio.play().catch(function() {});
-				preloadNext();
-				if (preload.src) {
-					var p = preload;
-					p.muted = true;
-					p.play().then(function() {
-						if (p !== audio) {
-							p.pause();
-							p.currentTime = 0;
-						}
-						p.muted = false;
-					}).catch(function() { p.muted = false; });
-				}
+				document.getElementById("jam-listen").hidden = true;
 				apply();
+				preloadNext();
+				unlock(audio);
+				unlock(preload);
+			}
+
+			document.getElementById("jam").addEventListener("click", startListening, true);
+			document.getElementById("jam").addEventListener("keydown", startListening, true);
+			document.getElementById("jam-listen").addEventListener("click", function() {
+				var cur = current();
+				if (state && state.Host && cur && !state.Playing) { jamControl("play"); }
 			});
 
 			function el(tag, text, cls) {
