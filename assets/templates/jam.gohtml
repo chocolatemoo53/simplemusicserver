@@ -170,6 +170,9 @@
 			var bestRTT = Infinity;
 			var listening = false;
 			var loadedKey = null;
+			var seekLag = 0.3;
+			var seekStarted = 0;
+			var lastSeek = 0;
 			var audio = new Audio();
 			audio.preload = "auto";
 
@@ -245,7 +248,7 @@
 					loadedKey = cur.Key;
 					audio.src = base() + "/track/" + cur.Key;
 					audio.addEventListener("loadedmetadata", function() {
-						audio.currentTime = Math.max(0, expectedPos());
+						jump();
 						sync();
 					}, {once: true});
 					return;
@@ -256,9 +259,18 @@
 			function sync() {
 				var cur = current();
 				if (!listening || !cur || loadedKey !== cur.Key || audio.readyState < 1) { return; }
-				var want = Math.max(0, expectedPos());
-				if (Math.abs(audio.currentTime - want) > 0.4) {
-					audio.currentTime = want;
+				if (!state.Playing) {
+					audio.playbackRate = 1;
+					if (Math.abs(audio.currentTime - expectedPos()) > 0.4) { jump(); }
+				} else if (!audio.seeking && audio.readyState >= 3) {
+					var drift = audio.currentTime - expectedPos();
+					if (Math.abs(drift) > 2 && Date.now() - lastSeek > 4000) {
+						jump();
+					} else if (Math.abs(drift) > 0.05) {
+						audio.playbackRate = 1 - Math.max(-0.08, Math.min(0.08, drift * 0.5));
+					} else {
+						audio.playbackRate = 1;
+					}
 				}
 				if (state.Playing && audio.paused) {
 					audio.play().catch(function() {});
@@ -266,6 +278,19 @@
 					audio.pause();
 				}
 			}
+
+			function jump() {
+				lastSeek = seekStarted = Date.now();
+				audio.playbackRate = 1;
+				audio.currentTime = Math.max(0, expectedPos() + (state && state.Playing ? seekLag : 0));
+			}
+
+			audio.addEventListener("canplay", function() {
+				if (seekStarted) {
+					seekLag = Math.max(0.1, Math.min(3, (Date.now() - seekStarted) / 1000));
+					seekStarted = 0;
+				}
+			});
 
 			audio.addEventListener("ended", function() {
 				var cur = current();
@@ -344,7 +369,7 @@
 				}
 				bar.style.width = Math.min(100, expectedPos() / cur.Duration * 100) + "%";
 			}, 250);
-			setInterval(sync, 1000);
+			setInterval(sync, 500);
 
 			function post(path, data) {
 				return fetch(base() + "/" + path, {method: "POST", body: new URLSearchParams(data || {})}).then(function(res) {

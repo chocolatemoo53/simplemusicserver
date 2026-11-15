@@ -411,7 +411,7 @@ func jamTrack(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	if it.mime != "" {
 		w.Header().Set("Content-Type", it.mime)
 	}
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
 	http.ServeContent(w, r, "", time.Time{}, reader)
 }
 
