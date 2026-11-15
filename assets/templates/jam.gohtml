@@ -128,6 +128,13 @@
 
 				<section id="jam-add" hidden>
 					<h3>{{tr "jam_add"}}</h3>
+					<p id="jam-source-row" hidden>
+						<label for="jam-source">{{tr "jam_from"}}</label>
+						<select id="jam-source">
+							<option value="">{{tr "jam_from_mine"}}</option>
+							<option value="host">{{tr "jam_from_host"}}</option>
+						</select>
+					</p>
 					<input type="search" id="jam-search" placeholder='{{tr "jam_search"}}' autocomplete="off">
 					<ul id="jam-results" class="jam-list"></ul>
 				</section>
@@ -148,6 +155,8 @@
 						<button type="button" class="btn-danger" onclick="jamEnd()">{{tr "jam_end"}}</button>
 					</div>
 					<p><label><input type="checkbox" id="jam-guests" onchange="jamSetting('guests', {control: this.checked ? 'on' : ''})"> {{tr "jam_guestcontrol"}}</label></p>
+					<p><label><input type="checkbox" id="jam-hostlib" onchange="jamSetting('library', {share: this.checked ? 'on' : ''})"> {{tr "jam_sharelibrary"}}</label><br>
+					<span class="jam-muted">{{tr "jam_sharelibrary_help"}}</span></p>
 				</section>
 			</div>
 			<script>
@@ -424,6 +433,10 @@
 				document.getElementById("jam-add").hidden = !state.CanAdd;
 				document.getElementById("jam-host").hidden = !state.Host;
 				document.getElementById("jam-guests").checked = state.GuestControl;
+				document.getElementById("jam-hostlib").checked = state.HostLibrary;
+				var signedIn = {{if $.User.ID}}true{{else}}false{{end}};
+				document.getElementById("jam-source-row").hidden = !(signedIn && state.HostLibrary && !state.Host);
+				if (!state.HostLibrary) { document.getElementById("jam-source").value = ""; }
 				document.getElementById("jam-listeners").textContent = state.Listeners.length ? state.Listeners.join(", ") : TEXT.noListeners;
 
 				var list = document.getElementById("jam-queue");
@@ -500,6 +513,14 @@
 				if (confirm(TEXT.confirmEnd)) { jamSetting("end"); }
 			}
 
+			function source() {
+				var signedIn = {{if $.User.ID}}true{{else}}false{{end}};
+				return signedIn ? document.getElementById("jam-source").value : "host";
+			}
+			document.getElementById("jam-source").addEventListener("change", function() {
+				search(document.getElementById("jam-search").value);
+			});
+
 			var searchTimer = null;
 			document.getElementById("jam-search").addEventListener("input", function() {
 				var q = this.value;
@@ -513,13 +534,13 @@
 					results.replaceChildren();
 					return;
 				}
-				fetch(base() + "/search?q=" + encodeURIComponent(q)).then(function(res) { return res.json(); }).then(function(tracks) {
+				fetch(base() + "/search?q=" + encodeURIComponent(q) + "&from=" + source()).then(function(res) { return res.json(); }).then(function(tracks) {
 					results.replaceChildren();
 					tracks.forEach(function(t) {
 						var li = el("li");
 						li.append(el("span", t.Title + (t.Artist ? " · " + t.Artist : ""), "jam-track"));
 						li.append(button(TEXT.add, function() {
-							post("add", {ids: t.ID, name: nameInput.value});
+							post("add", {ids: t.ID, name: nameInput.value, from: source()});
 						}));
 						results.append(li);
 					});

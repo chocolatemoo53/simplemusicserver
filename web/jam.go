@@ -66,6 +66,7 @@ type jam struct {
 	id           string
 	host         int
 	guestControl bool
+	hostLib      *tube.User
 	items        []*jamItem
 	index        int
 	playing      bool
@@ -169,6 +170,7 @@ func endJam(j *jam) {
 		clear(it.picKey)
 	}
 	j.items = nil
+	j.hostLib = nil
 	j.ended = true
 	j.notify(false)
 }
@@ -234,6 +236,7 @@ type jamStateView struct {
 	Pos          float64
 	Anchor       int64
 	GuestControl bool
+	HostLibrary  bool
 	Host         bool
 	CanControl   bool
 	CanAdd       bool
@@ -270,7 +273,8 @@ func (j *jam) view(ctx context.Context) jamStateView {
 		GuestControl: j.guestControl,
 		Host:         host,
 		CanControl:   host || j.guestControl,
-		CanAdd:       signedIn,
+		CanAdd:       signedIn || j.hostLib != nil,
+		HostLibrary:  j.hostLib != nil,
 		Listeners:    names,
 		Ended:        j.ended,
 	}
@@ -464,9 +468,26 @@ type jamSearchResult struct {
 	Album  string
 }
 
+func jamLibrary(ctx context.Context, r *http.Request, j *jam) (tube.User, bool) {
+	if r.FormValue("from") != "host" {
+		return userFrom(ctx)
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.hostLib == nil {
+		return tube.User{}, false
+	}
+	return *j.hostLib, true
+}
+
 func jamSearch(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	u, signedIn := userFrom(ctx)
-	if !signedIn || findJam(r.PathValue("id")) == nil {
+	j := findJam(r.PathValue("id"))
+	if j == nil {
+		http.NotFound(w, r)
+		return
+	}
+	u, ok := jamLibrary(ctx, r, j)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -512,12 +533,12 @@ func jamPost(w http.ResponseWriter, r *http.Request) (*jam, bool) {
 }
 
 func jamAdd(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	u, signedIn := userFrom(ctx)
 	j, ok := jamPost(w, r)
 	if !ok {
 		return
 	}
-	if !signedIn {
+	u, ok := jamLibrary(ctx, r, j)
+	if !ok {
 		http.Error(w, "Sign in to add music", http.StatusUnauthorized)
 		return
 	}
@@ -695,6 +716,15 @@ func jamSettings(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	case "guests":
 		j.mu.Lock()
 		j.guestControl = r.FormValue("control") == "on"
+		j.notify(false)
+		j.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	case "library":
+		j.mu.Lock()
+		j.hostLib = nil
+		if r.FormValue("share") == "on" {
+			j.hostLib = &u
+		}
 		j.notify(false)
 		j.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
