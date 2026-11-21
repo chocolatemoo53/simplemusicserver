@@ -8,8 +8,8 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.48.0
-	github.com/aws/aws-sdk-go-v2/credentials v1.21.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
+	github.com/aws/aws-sdk-go-v2/credentials v1.21.1
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.115.0
 	github.com/aws/smithy-go v1.28.9
 	github.com/dustin/go-humanize v1.1.0
 	github.com/expr-lang/expr v1.17.8
@@ -21,7 +21,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/posener/order v0.0.1
 	github.com/rs/cors v1.11.1
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/text v0.44.0
 	modernc.org/sqlite v1.62.0
@@ -45,7 +45,7 @@ require (
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/stretchr/testify v1.8.2 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
